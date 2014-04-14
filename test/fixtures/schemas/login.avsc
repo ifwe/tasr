@@ -1,0 +1,36 @@
+{"namespace": "tagged.events",
+ "type": "record",
+ "name": "Login",
+ "fields": [
+     {"name": "source__timestamp", "type": "long"},
+     {"name": "source__agent", "type": "string"},
+     {"name": "source__ip_address", "type": "string"},
+
+     {"name": "login__user_id", "type": "long"},
+     {"name": "login__status", "type": "string"},
+     {"name": "login__ips", "type": "string"},
+     {"name": "login__email", "type": "string"},
+     {"name": "login__guid", "type": "string"},
+     {"name": "login__login_type", "type": "string"},
+     {"name": "login__session_id", "type": "string"},
+     {"name": "login__status_code", "type": ["null", "int"]},
+     {"name": "login__country_code", "type": ["null", "string"]},
+     {"name": "login__browser_id", "type": "string"},
+     
+     {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__handlers", "type":
+       [ "null", 
+         { "type": "array", "items": 
+           { "type": "record",
+             "name": "Handler",
+             "fields": [
+               {"name": "timestamp", "type": "long"},
+               {"name": "agent", "type": "string"},
+               {"name": "ip_address", "type": "string"}
+             ]
+           } 
+         } 
+       ] 
+     }
+ ]
+}

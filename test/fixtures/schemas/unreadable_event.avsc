@@ -1,0 +1,27 @@
+{"namespace": "tagged.events",
+ "type": "record",
+ "name": "UnreadableEvent",
+ "fields": [
+     {"name": "source__timestamp", "type": "long"},
+     {"name": "source__agent", "type": "string"},
+     {"name": "source__ip_address", "type": "string"},
+
+     {"name": "unreadable_event__bytes", "type": "bytes" },
+     
+     {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__handlers", "type":
+       [ "null", 
+         { "type": "array", "items": 
+           { "type": "record",
+             "name": "Handler",
+             "fields": [
+               {"name": "timestamp", "type": "long"},
+               {"name": "agent", "type": "string"},
+               {"name": "ip_address", "type": "string"}
+             ]
+           } 
+         } 
+       ] 
+     }
+ ]
+}
