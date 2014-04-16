@@ -18,7 +18,7 @@ class AbstractSchemaRepository(object):
     def __init__(self):
         pass
     
-    def register(self, topic, schema):
+    def register(self, topic, schema_str):
         raise Exception(u'Abstract class method called.')
     
     def getLatestForTopic(self, topic):
@@ -81,14 +81,14 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         return _schemas
 
     def _add_registered_schema(self, registered_schema):
-        if not registered_schema.validate_schema():
+        if not registered_schema.validate_schema_str():
             raise Exception(u'Cannot register invalid schema.')
         _topic_id = u'topic.%s' % registered_schema.topic
         # add the schema to the sorted set first
         logging.debug(u'zadd %s %s %s' % (_topic_id, registered_schema.version, 
-                                          registered_schema.cannonical_schema))
+                                          registered_schema.cannonical_schema_str))
         self.redis.zadd(_topic_id, registered_schema.version, 
-                        registered_schema.cannonical_schema)
+                        registered_schema.cannonical_schema_str)
         # then add references to the id indexes
         self.redis.hset(u'id.%s' % registered_schema.md5_id, _topic_id, 
                         registered_schema.version)
@@ -98,13 +98,13 @@ class RedisSchemaRepository(AbstractSchemaRepository):
     def register(self, topic, schema_str):
         _version = int(time.time())
         _new_rs = self._package_registered_schema(topic, schema_str, _version)
-        if not _new_rs.validate_schema():
+        if not _new_rs.validate_schema_str():
             raise Exception(u'Refusing to register invalid schema.')
 
         _md5_rs = self._get_by_id_and_topic(_new_rs.md5_id_base64, topic)
         _sha_rs = self._get_by_id_and_topic(_new_rs.sha256_id_base64, topic)
-        if (_md5_rs and _md5_rs.validate_schema() and _sha_rs and 
-            _sha_rs.validate_schema() and _md5_rs == _sha_rs):
+        if (_md5_rs and _md5_rs.validate_schema_str() and _sha_rs and 
+            _sha_rs.validate_schema_str() and _md5_rs == _sha_rs):
             logging.debug(u'Schema already registered.')
             return _md5_rs
               
@@ -114,7 +114,7 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         
     def getLatestRegisteredSchemaForTopic(self, topic):
         _rs = self._get_all_for_topic(topic, -1, -1)[0]
-        if _rs.validate_schema():
+        if _rs.validate_schema_str():
             return _rs
         return None
 
@@ -131,12 +131,12 @@ class RedisSchemaRepository(AbstractSchemaRepository):
     def getLatestForTopic(self, topic):
         _rs = self.getLatestRegisteredSchemaForTopic(topic)
         if _rs:
-            return _rs.cannonical_schema
+            return _rs.cannonical_schema_str
     
     def getByID(self, id_base64=None, id_bytes=None, id_hex=None):
         _rsa = self.getAllRegisteredSchemasForID(id_base64, id_bytes, id_hex)
         if _rsa and len(_rsa) > 0:
-            return _rsa[0].cannonical_schema
+            return _rsa[0].cannonical_schema_str
         return None
 
 

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(_test_dir, _src_dir))
 _fix_dir = os.path.abspath(os.path.dirname("%s/../fixtures/" % _test_dir))
 
 import unittest
+import avro.schema
 from tasr import AvroSchemaRepository
 
 try:
@@ -20,7 +21,7 @@ except:
     LOCAL_REDIS = False
 
 
-class TestASR(unittest.TestCase):
+class TestTASR(unittest.TestCase):
 
     def setUp(self):
         self.event_type = "gold"
@@ -42,13 +43,22 @@ class TestASR(unittest.TestCase):
         _rs = self.asr.register(self.event_type, self.schema_str)
         self.assertFalse(_rs == None, u'Failed to register schema')
 
-    def test_register_fail_for_invalid_schema(self):
+    def test_register_fail_for_empty_schema(self):
         try:
             _rs = self.asr.register(self.event_type, None)
             self.fail(u'Should have thrown an exception.')
         except:
             pass
 
+    def test_register_fail_for_invalid_schema(self):
+        try:
+            _rs = self.asr.register(self.event_type, "%s }" % self.schema_str)
+            self.fail(u'Should have thrown an exception.')
+        except avro.schema.SchemaParseException:
+            pass
+        except Exception as ex:
+            self.fail(u'Unexpected exception: %s' % ex)
+        
     def test_register_schema_and_get_latest_for_topic(self):
         _rs = self.asr.register(self.event_type, self.schema_str)
         _rs2 = self.asr.getLatestRegisteredSchemaForTopic(self.event_type)
@@ -75,9 +85,9 @@ class TestASR(unittest.TestCase):
         
         # we should have two versions of the gold schema now, so grab the latest
         _latest_schema_str = self.asr.getLatestForTopic(self.event_type)
-        self.assertNotEqual(_rs.cannonical_schema, _latest_schema_str, 
+        self.assertNotEqual(_rs.cannonical_schema_str, _latest_schema_str, 
                             u'Latest schema unexpectedly equal to earlier version')
-        self.assertEqual(_rs2.cannonical_schema, _latest_schema_str, 
+        self.assertEqual(_rs2.cannonical_schema_str, _latest_schema_str, 
                          u'Latest schema unexpectedly unequal to later version')
         
         # also grab all RSs for topic and confirm they match _rs and _rs2
@@ -86,6 +96,9 @@ class TestASR(unittest.TestCase):
         self.assertEqual(_rs, _all_rs[0], u'First version wrong.')
         self.assertEqual(_rs2, _all_rs[1], u'Second version wrong.')
 
+if __name__ == "__main__":
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASR)
+    unittest.TextTestRunner(verbosity=2).run(suite)
 
 
         
