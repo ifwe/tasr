@@ -61,7 +61,7 @@ class TestTASR(unittest.TestCase):
         
     def test_register_schema_and_get_latest_for_topic(self):
         _rs = self.asr.register(self.event_type, self.schema_str)
-        _rs2 = self.asr.getLatestRegisteredSchemaForTopic(self.event_type)
+        _rs2 = self.asr.get_latest_for_topic(self.event_type)
         self.assertEqual(_rs, _rs2, u'Recovered registered schema unequal.')
         
     def test_reg_and_rereg(self):
@@ -71,9 +71,11 @@ class TestTASR(unittest.TestCase):
         
     def test_reg_and_get_by_id(self):
         _rs = self.asr.register(self.event_type, self.schema_str)
-        self.assertEqual(_rs, self.asr.getAllRegisteredSchemasForID(_rs.md5_id)[0], 
+        _rs.version = None
+        _rs.topic = None
+        self.assertEqual(_rs, self.asr.get_for_id(_rs.md5_id), 
                          u'MD5 ID retrieved unequal registered schema')
-        self.assertEqual(_rs, self.asr.getAllRegisteredSchemasForID(_rs.sha256_id)[0], 
+        self.assertEqual(_rs, self.asr.get_for_id(_rs.sha256_id), 
                          u'SHA256 ID retrieved unequal registered schema')
         
     def test_reg_then_reg_new_and_get_latest_for_topic(self):
@@ -84,18 +86,12 @@ class TestTASR(unittest.TestCase):
         self.assertNotEqual(_rs, _rs2, u'Modded schema unexpectedly equal on get')
         
         # we should have two versions of the gold schema now, so grab the latest
-        _latest_schema_str = self.asr.getLatestForTopic(self.event_type)
-        self.assertNotEqual(_rs.cannonical_schema_str, _latest_schema_str, 
+        _latest_schema_str = self.asr.get_latest_for_topic(self.event_type).canonical_schema_str
+        self.assertNotEqual(_rs.canonical_schema_str, _latest_schema_str, 
                             u'Latest schema unexpectedly equal to earlier version')
-        self.assertEqual(_rs2.cannonical_schema_str, _latest_schema_str, 
+        self.assertEqual(_rs2.canonical_schema_str, _latest_schema_str, 
                          u'Latest schema unexpectedly unequal to later version')
         
-        # also grab all RSs for topic and confirm they match _rs and _rs2
-        _all_rs = self.asr.getAllRegisteredSchemasForTopic(self.event_type)
-        self.assertEqual(2, len(_all_rs), u'Got wrong number of versions back (%s)' % len(_all_rs))
-        self.assertEqual(_rs, _all_rs[0], u'First version wrong.')
-        self.assertEqual(_rs2, _all_rs[1], u'Second version wrong.')
-
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASR)
     unittest.TextTestRunner(verbosity=2).run(suite)

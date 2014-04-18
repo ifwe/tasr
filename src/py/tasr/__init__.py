@@ -5,15 +5,29 @@ Created on Apr 2, 2014
 '''
 
 class AbstractSchemaRepository(object):
-    '''Any schema repository should support these three basic methods:
+    '''Any schema repository should support these four basic methods:
     
-      - register
-      - getLatestForTopic
-      - getById
+      - register a new schema for a topic
+      - get the latest schema registered for a topic
+      - get a specific schema (with a topic and a serial version id)
+      - get a specific schema (with a hash-based id) 
     
     In each case the specifics of the registration process and the backing store
-    are hidden from the client.  What gets passed back and forth are strings --
-    topic, schema_str and id (which is base64-encoded bytes -- so, a string).
+    are hidden from the client.
+    
+    Schemas are identified one of two ways -- either by a combination of topic
+    and version (with versions starting with 1, and shorthand for the most 
+    recent being -1), or by a hash-based id string.  The id strings are base64
+    encoded byte arrays, with a 1-byte size header (indicating how many bytes
+    will follow) and the id bytes themselves.  Those bytes are the digest of the
+    canonical schema string using either the MD5 (16 bytes) or SHA256 (32 bytes) 
+    hashes.
+    
+    What gets passed back in all cases is a RegisteredSchema object (or None).
+    The RegisteredSchema has the canonical schema string as a primary attribute,
+    with md5_id and sha256_id attributes automatically derived from the schema.
+    The object also has a tv_dict attribute, which should hold the most recent
+    version the schema represents for each topic it is associated with. 
     '''
     def __init__(self):
         pass
@@ -21,10 +35,13 @@ class AbstractSchemaRepository(object):
     def register(self, topic, schema_str):
         raise Exception(u'Abstract class method called.')
     
-    def getLatestForTopic(self, topic):
+    def get_latest_for_topic(self, topic):
         raise Exception(u'Abstract class method called.')
     
-    def getByID(self, id_base64=None, id_bytes=None, id_hex=None):
+    def get_for_topic_and_version(self, topic, version):
+        raise Exception(u'Abstract class method called.')
+    
+    def get_for_id(self, id_base64=None, id_bytes=None, id_hex=None):
         raise Exception(u'Abstract class method called.')
 
 
@@ -33,112 +50,155 @@ import logging
 import redis
 import base64
 import binascii
+import io
+import struct
 from registered_schema import RegisteredSchema
 
 class RedisSchemaRepository(AbstractSchemaRepository):
-    '''
+    '''The Redis-based implementation of the AbstractSchemaRepository uses the 
+    List and Hash structures provided by Redis as the backing store.  
+    
+    The primary store is a hash type, using a key in the form 'id.<sha256_id>'.
+    The hash entry has, at a minimum, the following fields: sha256_id, md5_id, 
+    and schema.  Additionally, for each topic the schema is registered for, the
+    hash entry has a 'topic.<topic>' field that holds a version number.  The 
+    version is the latest version for a topic, so if the same schema has been 
+    registered more than once for a topic, the hash's entry only lists the last.
+    
+    There is a secondary hash entry used to provide an index from the md5_id
+    values.  The key is in the form 'id.<md5_id>', and the hash entry only holds
+    one field, 'sha256_id', with the key value you need to look up the primary 
+    hash entry (that is, 'id.<sha256_id>').
+    
+    In addition to the hash entries, there are lists for each topic that has 
+    registered schemas.  Each list entry is an SHA256 id key (i.e. -- 
+    'id.<sha256_id>').  The version is the "counting from 1" index of the entry
+    in the list.  So, the first entry in the list corresponds to version 1.
+    These are lists, not sets, as it is possible for a schema to be registered, 
+    then overridden, then reverted to -- in which case the same id key can occur 
+    more than once in the list.
+        
+    Retrieval of schemas by SHA256 ID is simple, requiring a single Redis 
+    operation.  However, retrieving by MD5 ID or, more commonly, by topic and 
+    version, requires two operations.  It is much faster to execute both in a 
+    single call, so we use the LUA script support in Redis to enable this.  This
+    approach allows us to avoid the latency of a second round-trip to Redis.  
     '''
     def __init__(self, host='localhost', port=6379, db=0):
         super(RedisSchemaRepository, self).__init__()
         self.redis = redis.StrictRedis(host, port, db)
+        # register lua scripts in Redis
+        self.lua_get_for_md5 = self._register_lua_get_for_md5()
+        self.lua_get_for_topic_and_version = self._register_lua_get_for_topic_and_version()
 
-    def _package_registered_schema(self, topic, schema_str, version):
-        return RegisteredSchema(topic, schema_str, version)
+    def _register_lua_get_for_md5(self):
+        _lua = '''
+        local sha256_id = redis.call('hget', KEYS[1], 'sha256_id')
+        return redis.call('hgetall', sha256_id)
+        '''
+        return self.redis.register_script(_lua)
 
-    def _get_all_for_id(self, base64_id):
-        _id = u'id.%s' % base64_id
-        _ver = None
-        _schema_str = None
-        _topic_ids = None
-        _rsa = []
-        if self.redis.exists(_id):
-            _topic_ids = self.redis.hkeys(_id)
-        for _tid in _topic_ids:
-            _ver = self.redis.hget(_id, _tid)
-            _schema_str = self.redis.zrangebyscore(_tid, _ver, _ver)[0]
-            _rsa.append(self._package_registered_schema(_tid[6:], _schema_str, _ver))
-        return _rsa
+    def _register_lua_get_for_topic_and_version(self):
+        _lua = '''
+        local sha256_id = redis.call('lindex', KEYS[1], KEYS[2])
+        return redis.call('hgetall', sha256_id)
+        '''
+        return self.redis.register_script(_lua)
+    
+    def _package_registered_schema(self, schema_str=None, topic=None, version=None):
+        return RegisteredSchema(schema_str, topic, version)
+        
+    def _process_hash_seq(self, vlist):
+        if not len(vlist) % 2 == 0:
+            raise Exception('Bad value list.  Must have even number of values.')
+        _idx = 0
+        _rdict = dict()
+        while _idx < len(vlist):
+            _k = vlist[_idx]
+            _idx += 1
+            _v = vlist[_idx]
+            _idx += 1
+            _rdict[_k] = _v
+        if len(_rdict) == 0:
+            return None
+        return _rdict
+    
+    def _get_for_sha256(self, sha256_base64_id):
+        _key = u'id.%s' % sha256_base64_id
+        _dict = self.redis.hgetall(_key)
+        if len(_dict) == 0:
+            return None
+        return _dict
 
-    def _get_by_id_and_topic(self, base64_id, topic):
-        _topic_id = u'topic.%s' % topic
-        _id = u'id.%s' % base64_id
-        _ver = None
-        _schema_str = None
-        if self.redis.exists(_id):
-            _ver = self.redis.hget(_id,_topic_id)
-        if _ver:
-            _schema_str = self.redis.zrangebyscore(_topic_id, _ver, _ver)[0]
-        if _schema_str:
-            return self._package_registered_schema(topic, _schema_str, _ver)
-
-    def _get_all_for_topic(self, topic, min_ver=0, max_ver=-1):
-        _topic_id = u'topic.%s' % topic
-        _ver = None
-        _schemas = []
-        if self.redis.exists(_topic_id):
-            for (_schema, _ver) in self.redis.zrange(_topic_id, min_ver, max_ver, withscores=True):
-                _schemas.append(self._package_registered_schema(topic, _schema, _ver))
-        return _schemas
+    def _get_for_md5(self, md5_base64_id):
+        _key = u'id.%s' % md5_base64_id
+        _rvals = self.lua_get_for_md5(keys=[_key, ])
+        return self._process_hash_seq(_rvals)
 
     def _add_registered_schema(self, registered_schema):
         if not registered_schema.validate_schema_str():
             raise Exception(u'Cannot register invalid schema.')
-        _topic_id = u'topic.%s' % registered_schema.topic
-        # add the schema to the sorted set first
-        logging.debug(u'zadd %s %s %s' % (_topic_id, registered_schema.version, 
-                                          registered_schema.cannonical_schema_str))
-        self.redis.zadd(_topic_id, registered_schema.version, 
-                        registered_schema.cannonical_schema_str)
-        # then add references to the id indexes
-        self.redis.hset(u'id.%s' % registered_schema.md5_id, _topic_id, 
-                        registered_schema.version)
-        self.redis.hset(u'id.%s' % registered_schema.sha256_id, _topic_id, 
-                        registered_schema.version)
+
+        _sha256_id = u'id.%s' % registered_schema.sha256_id
+        _md5_id = u'id.%s' % registered_schema.md5_id
+        _topic = registered_schema.topic
+        _topic_id = u'topic.%s' % _topic
+        
+        _d = self._get_for_sha256(registered_schema.sha256_id)
+        if _d:
+            registered_schema.update_from_dict(_d)
+            registered_schema.version = registered_schema.current_version(_topic)
+        else:
+            # get the minimal details into the hashes
+            _d = {'schema': registered_schema.canonical_schema_str,
+                  'sha256_id': _sha256_id,
+                  'md5_id': 'id.%s' % _md5_id,
+                  }
+            self.redis.hmset(_sha256_id, _d)
+            self.redis.hset(_md5_id, 'sha256_id', _sha256_id)
+
+        # now that we know the schema is in the hashes, reg for the topic
+        if not registered_schema.current_version(_topic):
+            _ver = self.redis.rpush(_topic_id, _sha256_id)
+            registered_schema.version = _ver 
+            self.redis.hset(_sha256_id, _topic_id, _ver)
+            registered_schema.tv_dict[_topic] = _ver
+
+        return registered_schema
     
     def register(self, topic, schema_str):
-        _version = int(time.time())
-        _new_rs = self._package_registered_schema(topic, schema_str, _version)
-        if not _new_rs.validate_schema_str():
-            raise Exception(u'Refusing to register invalid schema.')
-
-        _md5_rs = self._get_by_id_and_topic(_new_rs.md5_id_base64, topic)
-        _sha_rs = self._get_by_id_and_topic(_new_rs.sha256_id_base64, topic)
-        if (_md5_rs and _md5_rs.validate_schema_str() and _sha_rs and 
-            _sha_rs.validate_schema_str() and _md5_rs == _sha_rs):
-            logging.debug(u'Schema already registered.')
-            return _md5_rs
-              
-        if not (_md5_rs or _sha_rs):
-            self._add_registered_schema(_new_rs)
-            return _new_rs
+        _rs = self._package_registered_schema(schema_str, topic)
+        return self._add_registered_schema(_rs)
         
-    def getLatestRegisteredSchemaForTopic(self, topic):
-        _rs = self._get_all_for_topic(topic, -1, -1)[0]
-        if _rs.validate_schema_str():
+    def get_latest_for_topic(self, topic):
+        _ver = -1
+        _rs = self._package_registered_schema(None, topic, _ver)
+        _d = self.get_for_topic_and_version(topic, _ver)
+        _rs.update_from_dict(_d)
+        # ensure we update the version field to reflect the current version for the topic
+        _rs.version = _rs.current_version(topic)
+        return _rs
+
+    def get_for_topic_and_version(self, topic, version):
+        _key = u'topic.%s' % topic
+        _index = int(version)
+        _rvals = self.lua_get_for_topic_and_version(keys=[_key, _index, ])
+        return self._process_hash_seq(_rvals)
+
+    def get_for_id(self, id_base64):
+        _bytes = base64.b64decode(id_base64)
+        _buff = io.BytesIO(_bytes)
+        _id_type = struct.unpack('>b', _buff.read(1))[0]
+        if _id_type == 32:
+            _d = self._get_for_sha256(id_base64)
+        elif _id_type == 16:
+            _d = self._get_for_md5(id_base64)
+        
+        if _d:
+            _rs = self._package_registered_schema(None, None, None)
+            _rs.update_from_dict(_d)
             return _rs
         return None
-
-    def getAllRegisteredSchemasForTopic(self, topic):
-        return self._get_all_for_topic(topic)
-
-    def getAllRegisteredSchemasForID(self, id_base64=None, id_bytes=None, id_hex=None):
-        if not id_base64 and not id_bytes and id_hex:
-            _id_bytes = binascii.unhexlify(id_hex)
-        if not id_base64 and id_bytes:
-            _id_base64 = base64.b64encode(id_bytes)
-        return self._get_all_for_id(id_base64)
-
-    def getLatestForTopic(self, topic):
-        _rs = self.getLatestRegisteredSchemaForTopic(topic)
-        if _rs:
-            return _rs.cannonical_schema_str
-    
-    def getByID(self, id_base64=None, id_bytes=None, id_hex=None):
-        _rsa = self.getAllRegisteredSchemasForID(id_base64, id_bytes, id_hex)
-        if _rsa and len(_rsa) > 0:
-            return _rsa[0].cannonical_schema_str
-        return None
-
 
 from registered_schema import RegisteredAvroSchema
 
@@ -146,8 +206,8 @@ class AvroSchemaRepository(RedisSchemaRepository):
     def __init__(self, host='localhost', port=6379, db=0):
         super(AvroSchemaRepository, self).__init__()
 
-    def _package_registered_schema(self, topic, schema_str, version):
-        return RegisteredAvroSchema(topic, schema_str, version)
+    def _package_registered_schema(self, schema_str=None, topic=None, version=None):
+        return RegisteredAvroSchema(schema_str, topic, version)
 
 
 
