@@ -19,9 +19,11 @@ class RegisteredSchema(object):
     string has been associated with topic-version intersections.  That is, a 
     schema may be registered for more than one topic, and this object should 
     know about all those associations.  The most recent intersection for each 
-    topic should be in the tv_dict.  The specific attributes of topic and 
-    version are there to clarify the topic and version specific to a context
-    where that applies.  If, for instance, a schema is registered for topic T 
+    topic should be in the tv_dict.  
+    
+    The specific attributes of topic and version are there to clarify the topic 
+    and version specific to a context where that applies -- and are NOT used for
+    determining equality.  If, for instance, a schema is registered for topic T 
     twice (versions 2 and 4), and the schema for T version 2 is requested, the 
     tv_dict would list 4 for T (the most recent), while the version attribute 
     would be 2 (specific to the request context).
@@ -74,10 +76,10 @@ class RegisteredSchema(object):
     def as_dict(self):
         _d = self.tv_dict.copy()
         # add the specified topic and version
-        if self.topic:
-            _d['topic'] = self.topic
-        if self.version:
-            _d['version'] = self.version
+        #if self.topic:
+        #    _d['topic'] = self.topic
+        #if self.version:
+        #    _d['version'] = self.version
         # add the canonical version of the schema string
         _d['schema'] = self.canonical_schema_str
         # add the ids -- using the 'id.' prefixes
@@ -181,13 +183,18 @@ class RegisteredSchema(object):
                                                 self.md5_id)
 
     def __eq__(self, other):
+        '''Registered schemas are equal when the underlying canonical schema
+        strings (and hence the SHA256 and or MD5 ids) are equal AND the topic/
+        version mappings are the same.  
+        '''
         if not isinstance(other, RegisteredSchema):
             return False
-        if not self.topic == other.topic:
+        
+        if not self.sha256_id == other.sha256_id:
             return False
-        if not self.version == other.version:
-            return False
-        if self.md5_id == other.md5_id:
+
+        _shared_set = set(self.tv_dict.items()) & set(other.tv_dict.items())
+        if len(self.tv_dict) == len(_shared_set):
             return True
         return False
     

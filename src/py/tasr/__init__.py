@@ -91,6 +91,7 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         self.lua_get_for_md5 = self._register_lua_get_for_md5()
         self.lua_get_for_topic_and_version = self._register_lua_get_for_topic_and_version()
 
+    # LUA script registrations
     def _register_lua_get_for_md5(self):
         _lua = '''
         local sha256_id = redis.call('hget', KEYS[1], 'sha256_id')
@@ -104,11 +105,16 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         return redis.call('hgetall', sha256_id)
         '''
         return self.redis.register_script(_lua)
-    
-    def _package_registered_schema(self, schema_str=None, topic=None, version=None):
-        return RegisteredSchema(schema_str, topic, version)
+
+    # util methods    
+    def _get_registered_schema(self):
+        # Override in subclasses if a more specific RegisteredSchema class is used.
+        return RegisteredSchema()
         
-    def _process_hash_seq(self, vlist):
+    def _hgetall_seq_2_dict(self, vlist):
+        '''The HGETALL Redis command returns a "[<name0>, <value0>, <name1>, ...]
+        list, which we want to turn into a dict in several cases.
+        '''
         if not len(vlist) % 2 == 0:
             raise Exception('Bad value list.  Must have even number of values.')
         _idx = 0
@@ -123,79 +129,78 @@ class RedisSchemaRepository(AbstractSchemaRepository):
             return None
         return _rdict
     
-    def _get_for_sha256(self, sha256_base64_id):
+    def _get_for_sha256_id(self, sha256_base64_id):
+        '''A low-level method to pull the hash struct identified by the passed 
+        sha256 id and return it as a dict.
+        '''
         _key = u'id.%s' % sha256_base64_id
         _dict = self.redis.hgetall(_key)
         if len(_dict) == 0:
             return None
         return _dict
 
-    def _get_for_md5(self, md5_base64_id):
+    def _get_for_md5_id(self, md5_base64_id):
+        '''A low-level method to pull the hash struct identified by the passed 
+        md5 id, using a registered LUA script, and return it as a dict.
+        '''
         _key = u'id.%s' % md5_base64_id
         _rvals = self.lua_get_for_md5(keys=[_key, ])
-        return self._process_hash_seq(_rvals)
+        return self._hgetall_seq_2_dict(_rvals)
 
-    def _add_registered_schema(self, registered_schema):
-        if not registered_schema.validate_schema_str():
+    # exposed, API methods
+    def register(self, topic, schema_str):
+        '''
+        '''
+        _rs = self._get_registered_schema()
+        _rs.schema_str = schema_str
+        if not _rs.validate_schema_str():
             raise Exception(u'Cannot register invalid schema.')
 
-        _sha256_id = u'id.%s' % registered_schema.sha256_id
-        _md5_id = u'id.%s' % registered_schema.md5_id
-        _topic = registered_schema.topic
-        _topic_id = u'topic.%s' % _topic
+        # the key values are what we use as Redis keys
+        _sha256_key = u'id.%s' % _rs.sha256_id
+        _md5_key = u'id.%s' % _rs.md5_id
+        _topic_key = u'topic.%s' % topic
         
-        _d = self._get_for_sha256(registered_schema.sha256_id)
+        _d = self._get_for_sha256_id(_rs.sha256_id)
         if _d:
-            registered_schema.update_from_dict(_d)
-            registered_schema.version = registered_schema.current_version(_topic)
+            _rs.update_from_dict(_d)
+            _rs.version = _rs.current_version(topic)
         else:
-            # get the minimal details into the hashes
-            _d = {'schema': registered_schema.canonical_schema_str,
-                  'sha256_id': _sha256_id,
-                  'md5_id': 'id.%s' % _md5_id,
-                  }
-            self.redis.hmset(_sha256_id, _d)
-            self.redis.hset(_md5_id, 'sha256_id', _sha256_id)
+            self.redis.hmset(_sha256_key, _rs.as_dict())
+            self.redis.hset(_md5_key, 'sha256_id', _sha256_key)
 
         # now that we know the schema is in the hashes, reg for the topic
-        if not registered_schema.current_version(_topic):
-            _ver = self.redis.rpush(_topic_id, _sha256_id)
-            registered_schema.version = _ver 
-            self.redis.hset(_sha256_id, _topic_id, _ver)
-            registered_schema.tv_dict[_topic] = _ver
+        if not _rs.current_version(topic):
+            _ver = self.redis.rpush(_topic_key, _sha256_key)
+            _rs.version = _ver 
+            self.redis.hset(_sha256_key, _topic_key, _ver)
+            _rs.tv_dict[topic] = _ver
 
-        return registered_schema
-    
-    def register(self, topic, schema_str):
-        _rs = self._package_registered_schema(schema_str, topic)
-        return self._add_registered_schema(_rs)
-        
-    def get_latest_for_topic(self, topic):
-        _ver = -1
-        _rs = self._package_registered_schema(None, topic, _ver)
-        _d = self.get_for_topic_and_version(topic, _ver)
-        _rs.update_from_dict(_d)
-        # ensure we update the version field to reflect the current version for the topic
-        _rs.version = _rs.current_version(topic)
         return _rs
+    
+    def get_latest_for_topic(self, topic):
+        return self.get_for_topic_and_version(topic, -1)
 
     def get_for_topic_and_version(self, topic, version):
         _key = u'topic.%s' % topic
         _index = int(version)
         _rvals = self.lua_get_for_topic_and_version(keys=[_key, _index, ])
-        return self._process_hash_seq(_rvals)
+        _d = self._hgetall_seq_2_dict(_rvals)
+        _rs = self._get_registered_schema()
+        _rs.update_from_dict(_d)
+        return _rs
 
     def get_for_id(self, id_base64):
         _bytes = base64.b64decode(id_base64)
         _buff = io.BytesIO(_bytes)
         _id_type = struct.unpack('>b', _buff.read(1))[0]
         if _id_type == 32:
-            _d = self._get_for_sha256(id_base64)
+            _d = self._get_for_sha256_id(id_base64)
         elif _id_type == 16:
-            _d = self._get_for_md5(id_base64)
+            _d = self._get_for_md5_id(id_base64)
         
         if _d:
-            _rs = self._package_registered_schema(None, None, None)
+            _rs = self._get_registered_schema()
             _rs.update_from_dict(_d)
             return _rs
         return None
@@ -206,8 +211,8 @@ class AvroSchemaRepository(RedisSchemaRepository):
     def __init__(self, host='localhost', port=6379, db=0):
         super(AvroSchemaRepository, self).__init__()
 
-    def _package_registered_schema(self, schema_str=None, topic=None, version=None):
-        return RegisteredAvroSchema(schema_str, topic, version)
+    def _get_registered_schema(self):
+        return RegisteredAvroSchema()
 
 
 
