@@ -46,22 +46,19 @@ def register(topic_name=None):
         return
     except SchemaParseException:
         abort(400, 'Invalid schema.  Failed to register.')
-    except Exception as e:
-        abort(500, 'Exception:%s' % e)
+    #except Exception as e:
+    #    abort(500, 'Exception:%s' % e)
 
 @app.get('/tasr/topic/<topic_name>')
 def get_latest_for_topic(topic_name=None):
     if topic_name == None or topic_name == '':
         abort(400, 'Refusing to look for schema for %s' % topic_name)
-    try:
-        _rs = ASR.get_latest_for_topic(topic_name)
-        if _rs:
-            set_x_schema_headers(response, _rs)
-            return _rs.canonical_schema_str
-        # return nothing if there is no schema registered for the topic name
-        abort(404, 'No schema registered for topic %s.' % topic_name)
-    except Exception as e:
-        abort(500, 'Exception:%s' % e)
+    _rs = ASR.get_latest_for_topic(topic_name)
+    if _rs:
+        set_x_schema_headers(response, _rs)
+        return _rs.canonical_schema_str
+    # return nothing if there is no schema registered for the topic name
+    abort(404, 'No schema registered for topic %s.' % topic_name)
         
 @app.get('/tasr/topic/<topic_name>/<version>')
 def get_for_topic_and_version(topic_name=None, version=None):
@@ -69,29 +66,23 @@ def get_for_topic_and_version(topic_name=None, version=None):
         abort(400, 'Refusing to look for schema for %s' % topic_name)
     if version == None:
         return get_latest_for_topic(topic_name)
-    try:
-        _rs = ASR.get_for_topic_and_version(topic_name, version)
-        if _rs:
-            set_x_schema_headers(response, _rs)
-            return _rs.canonical_schema_str
-        # return nothing if there is no schema registered for the topic name
-        abort(404, 'No schema registered for topic %s.' % topic_name)
-    except Exception as e:
-        abort(500, 'Exception:%s' % e)
+    _rs = ASR.get_for_topic_and_version(topic_name, version)
+    if _rs:
+        set_x_schema_headers(response, _rs)
+        return _rs.canonical_schema_str
+    # return nothing if there is no schema registered for the topic name
+    abort(404, 'No schema registered for topic %s.' % topic_name)
 
 @app.get('/tasr/id/<base64_id>')
 def get_for_id(base64_id=None):
     if base64_id == None or base64_id == '':
         abort(400, 'Refusing to look for schema for %s' % base64_id)
-    try:
-        _rs = ASR.get_for_id(base64_id)
-        if _rs:
-            set_x_schema_headers(response, _rs)
-            return _rs.canonical_schema_str
-        # return nothing if there is no schema registered for the topic name
-        abort(404, 'No schema registered with id %s' % base64_id)
-    except Exception as e:
-        abort(500, 'Exception:%s' % e)
+    _rs = ASR.get_for_id(base64_id)
+    if _rs:
+        set_x_schema_headers(response, _rs)
+        return _rs.canonical_schema_str
+    # return nothing if there is no schema registered for the topic name
+    abort(404, 'No schema registered with id %s' % base64_id)
 
 if __name__ == "__main__":
     app.run(host='localhost', port=8080, debug=True)

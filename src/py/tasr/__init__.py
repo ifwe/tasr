@@ -95,14 +95,22 @@ class RedisSchemaRepository(AbstractSchemaRepository):
     def _register_lua_get_for_md5(self):
         _lua = '''
         local sha256_id = redis.call('hget', KEYS[1], 'sha256_id')
-        return redis.call('hgetall', sha256_id)
+        if sha256_id then
+            return redis.call('hgetall', sha256_id)
+        else
+            return nil
+        end
         '''
         return self.redis.register_script(_lua)
 
     def _register_lua_get_for_topic_and_version(self):
         _lua = '''
         local sha256_id = redis.call('lindex', KEYS[1], KEYS[2])
-        return redis.call('hgetall', sha256_id)
+        if sha256_id then
+            return redis.call('hgetall', sha256_id)
+        else
+            return nil
+        end
         '''
         return self.redis.register_script(_lua)
 
@@ -187,10 +195,11 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         if _index > 0:
             _index -= 1 # ver counts from 1, index from 0        
         _rvals = self.lua_get_for_topic_and_version(keys=[_key, _index, ])
-        _d = self._hgetall_seq_2_dict(_rvals)
-        _rs = self._get_registered_schema()
-        _rs.update_from_dict(_d)
-        return _rs
+        if _rvals:
+            _d = self._hgetall_seq_2_dict(_rvals)
+            _rs = self._get_registered_schema()
+            _rs.update_from_dict(_d)
+            return _rs
 
     def get_for_id(self, id_base64):
         _bytes = base64.b64decode(id_base64)

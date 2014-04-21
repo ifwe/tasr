@@ -118,6 +118,16 @@ class TestTASRService(unittest.TestCase):
         self.assertEqual(self.schema_str, _get_resp.body, 
                          u'Unexpected body: %s' % _get_resp.body)
 
+    def test_reg_and_get_non_existent_version(self):
+        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+                                              content_type=self.content_type, 
+                                              body=self.schema_str)
+        _hdict = extract_hdict(_put_resp.headerlist, 'X-SCHEMA-')
+        _ver = int(_hdict['X-SCHEMA-VERSION'])
+        _query = "%s/%s" % (self.topic_url, (_ver + 1))
+        _get_resp = self.tasr_service.request(_query, method='GET', expect_errors=True)
+        self.assertEqual(404, _get_resp.status_int, u'Expected a 404 status code.')
+
     def test_reg_50_and_get_by_version(self):
         _schemas = []
         for _v in range(1, 50):
