@@ -118,25 +118,24 @@ class TestTASRService(unittest.TestCase):
         self.assertEqual(self.schema_str, _get_resp.body, 
                          u'Unexpected body: %s' % _get_resp.body)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def test_reg_50_and_get_by_version(self):
+        _schemas = []
+        for _v in range(1, 50):
+            _ver_schema_str = self.schema_str.replace('tagged.events', 'tagged.events.%s' % _v, 1)
+            _schemas.append(_ver_schema_str)
+            _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+                                                  content_type=self.content_type, 
+                                                  body=_ver_schema_str)
+            self.assertEqual(200, _put_resp.status_code, 
+                             u'Non-200 status code: %s' % _put_resp.status_code)
+            
+        for _v in range(1, 50):
+            _query = "%s/%s" % (self.topic_url, _v)
+            _get_resp = self.tasr_service.request(_query, method='GET')
+            self.assertEqual(200, _get_resp.status_code, 
+                             u'Non-200 status code: %s' % _get_resp.status_code)
+            self.assertEqual(_schemas[_v - 1], _get_resp.body, 
+                             u'Unexpected body: %s' % _get_resp.body)
     
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRService)

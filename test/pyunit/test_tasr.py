@@ -94,6 +94,16 @@ class TestTASR(unittest.TestCase):
         self.assertEqual(_rs, _re_rs, u'MD5 ID retrieved unequal registered schema')
         self.assertEqual(_rs, self.asr.get_for_id(_rs.sha256_id), 
                          u'SHA256 ID retrieved unequal registered schema')
+
+    def test_reg_50_then_get_by_version(self):
+        _rs_list = []
+        for _v in range(1, 50):
+            _ver_schema_str = self.schema_str.replace('tagged.events', 'tagged.events.%s' % _v, 1)
+            _rs_list.append(self.asr.register(self.event_type, _ver_schema_str))
+            
+        for _v in range(1, 50):
+            _re_rs = _re_rs = self.asr.get_for_topic_and_version(self.event_type, _v)
+            self.assertEqual(_rs_list[_v - 1], _re_rs, u'retrieved schema unequal.')
         
     def test_reg_then_reg_new_and_get_latest_for_topic(self):
         _rs = self.asr.register(self.event_type, self.schema_str)
