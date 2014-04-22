@@ -78,7 +78,8 @@ def get_for_topic_and_version(topic_name=None, version=None):
         set_x_schema_headers(response, _rs)
         return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
-    abort(404, 'No schema registered for topic %s.' % topic_name)
+    abort(404, 'No schema version %s registered for topic %s.' % 
+          (version, topic_name))
 
 @app.get('/tasr/id/<base64_id>')
 def get_for_id(base64_id=None):
