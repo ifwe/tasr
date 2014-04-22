@@ -4,11 +4,18 @@ Created on Apr 14, 2014
 @author: cmills
 '''
 
+import sys
 from tasr import AvroSchemaRepository
 from bottle import Bottle, request, abort, response
 from avro.schema import SchemaParseException
 
-ASR = AvroSchemaRepository()
+ASR = None
+try:
+    ASR = AvroSchemaRepository()
+except Exception as e:
+    print "Exception: %s" % e
+    sys.exit(2)
+
 app = Bottle()
 
 accepted_content_types = ['application/json', 'text/json']
@@ -84,6 +91,26 @@ def get_for_id(base64_id=None):
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered with id %s' % base64_id)
 
+import getopt
+def main(argv):
+    _host = 'localhost'
+    _port = 8080
+    _debug = False
+    try:
+        _opts, _args = getopt.getopt(argv, "h:p:d", ["host=", "port=", "debug"])
+    except getopt.GetoptError:
+        print 'service.py -h <hostname> -p <port> [-d]'
+        sys.exit(2)
+    for _opt, _arg in _opts:
+        if _opt in ("-h", "--host"):
+            _host = _arg
+        if _opt in ("-p", "--port"):
+            _port = _arg
+        if _opt in ("-d", "--debug"):
+            _debug = True
+    app.run(host = _host, port = _port, debug = _debug)
+
+
 if __name__ == "__main__":
-    app.run(host='localhost', port=8080, debug=True)
+    main(sys.argv[1:])
 

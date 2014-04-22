@@ -88,8 +88,12 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         super(RedisSchemaRepository, self).__init__()
         self.redis = redis.StrictRedis(host, port, db)
         # register lua scripts in Redis
-        self.lua_get_for_md5 = self._register_lua_get_for_md5()
-        self.lua_get_for_topic_and_version = self._register_lua_get_for_topic_and_version()
+        try:
+            self.lua_get_for_md5 = self._register_lua_get_for_md5()
+            self.lua_get_for_topic_and_version = self._register_lua_get_for_topic_and_version()
+        except redis.exceptions.ConnectionError:
+            raise Exception(u'Failed to connect to Redis at %s on port %s and db %s' %
+                            (host, port, db))
 
     # LUA script registrations
     def _register_lua_get_for_md5(self):
