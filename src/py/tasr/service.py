@@ -71,7 +71,7 @@ def get_latest_for_topic(topic_name=None):
 def get_for_topic_and_version(topic_name=None, version=None):
     if topic_name == None or topic_name == '':
         abort(400, 'Refusing to look for schema for %s' % topic_name)
-    if version == None:
+    if version == None or version.lower() == 'latest':
         return get_latest_for_topic(topic_name)
     _rs = ASR.get_for_topic_and_version(topic_name, version)
     if _rs:
