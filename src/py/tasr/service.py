@@ -75,6 +75,12 @@ def get_for_topic_and_version(topic_name=None, version=None):
         return get_latest_for_topic(topic_name)
     _rs = ASR.get_for_topic_and_version(topic_name, version)
     if _rs:
+        # With multiple versions for a topic, only the latest is included in the 
+        # retrieved RS.  If we asked for a version for a topic and got back an RS 
+        # with a differing version, it is safe to overwrite the version for the
+        # specified topic before generating the response headers.  That way the 
+        # client gets headers indicating the version expected.
+        _rs.tv_dict[topic_name] = version
         set_x_schema_headers(response, _rs)
         return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name

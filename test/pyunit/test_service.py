@@ -147,6 +147,32 @@ class TestTASRService(unittest.TestCase):
             self.assertEqual(_schemas[_v - 1], _get_resp.body, 
                              u'Unexpected body: %s' % _get_resp.body)
     
+    def test_reg_regmod_reg_then_get_ver_1(self):
+        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+                                              content_type=self.content_type, 
+                                              body=self.schema_str)
+        _schema_str_2 = self.schema_str.replace('tagged.events', 'tagged.events.alt', 1)
+        _put_resp2 = self.tasr_service.request(self.topic_url, method='PUT', 
+                                               content_type=self.content_type, 
+                                               body=_schema_str_2)
+        _put_resp3 = self.tasr_service.request(self.topic_url, method='PUT', 
+                                               content_type=self.content_type, 
+                                               body=self.schema_str)
+        _hdict = extract_hdict(_put_resp3.headerlist, 'X-SCHEMA-')
+        _ver = int(_hdict['X-SCHEMA-VERSION'])
+        self.assertEqual(3, _ver, u'Expected third PUT to return version of 3.')
+
+        # now get version 1 -- should be same schema, but diff ver in headers        
+        _query = "%s/%s" % (self.topic_url, 1)
+        _get_resp = self.tasr_service.request(_query, method='GET', expect_errors=True)
+        self.assertEqual(200, _get_resp.status_code, 
+                         u'Non-200 status code: %s' % _get_resp.status_code)
+        self.assertEqual(self.schema_str, _get_resp.body, 
+                         u'Unexpected body: %s' % _get_resp.body)
+        _hdict = extract_hdict(_get_resp.headerlist, 'X-SCHEMA-')
+        _get_ver = int(_hdict['X-SCHEMA-VERSION'])
+        self.assertEqual(1, _get_ver, u'Expected GET to return version of 1.')
+    
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRService)
     unittest.TextTestRunner(verbosity=2).run(suite)

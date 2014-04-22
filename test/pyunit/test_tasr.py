@@ -119,6 +119,30 @@ class TestTASR(unittest.TestCase):
         self.assertEqual(_rs2.canonical_schema_str, _latest_schema_str, 
                          u'Latest schema unexpectedly unequal to later version')
         
+    def test_multi_version_for_topic(self):
+        _rs = self.asr.register(self.event_type, self.schema_str)
+        # modify the namespace in the schema to ensure a non-whitespace change
+        _schema_str_2 = self.schema_str.replace('tagged.events', 'tagged.events.alt', 1)
+        _rs2 = self.asr.register(self.event_type, _schema_str_2)
+        # now re-register the original schema, which should become version 3
+        _rs3 = self.asr.register(self.event_type, self.schema_str)
+        self.assertEqual(_rs.sha256_id, _rs3.sha256_id, u'Unequal SHA256 IDs on re-reg!')
+        self.assertNotEqual(_rs, _rs3, u'Expected different versions for topic.')
+        _vlist = self.asr.get_all_versions_for_id_and_topic(_rs3.sha256_id, self.event_type)
+        self.assertEqual(2, len(_vlist), u'Expected two entry version list.')
+        self.assertEqual(1, _vlist[0], u'Expected first version to be 1.')
+        self.assertEqual(3, _vlist[1], u'Expected second version to be 3.')
+    
+    def test_reg_for_2_topics(self):
+        _rs = self.asr.register(self.event_type, self.schema_str)
+        _get_rs = self.asr.get_latest_for_topic(self.event_type)
+        self.assertEqual(_rs, _get_rs, u'Recovered registered schema unequal.')
+        _alt_topic = 'bob'
+        _rs2 = self.asr.register(_alt_topic, self.schema_str)
+        _get_rs2 = self.asr.get_latest_for_topic(_alt_topic)
+        self.assertEqual(_rs2, _get_rs2, u'Recovered registered schema unequal.')
+        self.assertEqual(_get_rs, _get_rs2, u'Recovered registered schema unequal.')
+        
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASR)
     unittest.TextTestRunner(verbosity=2).run(suite)

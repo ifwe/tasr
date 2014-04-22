@@ -176,18 +176,27 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         _d = self._get_for_sha256_id(_rs.sha256_id)
         if _d:
             _rs.update_from_dict(_d)
-            _rs.version = _rs.current_version(topic)
         else:
             self.redis.hmset(_sha256_key, _rs.as_dict())
             self.redis.hset(_md5_key, 'sha256_id', _sha256_key)
 
         # now that we know the schema is in the hashes, reg for the topic
+        
         if not _rs.current_version(topic):
+            # no version for this topic, so add it
             _ver = self.redis.rpush(_topic_key, _sha256_key)
             _rs.version = _ver 
             self.redis.hset(_sha256_key, _topic_key, _ver)
             _rs.tv_dict[topic] = _ver
-
+        else:
+            _last_ver_sha256_key = self.redis.lrange(_topic_key, -1, -1)[0]
+            if not _last_ver_sha256_key == _sha256_key:
+                # need to override outdated version entry with new one
+                _ver = self.redis.rpush(_topic_key, _sha256_key)
+                _rs.version = _ver 
+                self.redis.hset(_sha256_key, _topic_key, _ver)
+                _rs.tv_dict[topic] = _ver
+                
         return _rs
     
     def get_latest_for_topic(self, topic):
@@ -219,6 +228,16 @@ class RedisSchemaRepository(AbstractSchemaRepository):
             _rs.update_from_dict(_d)
             return _rs
         return None
+    
+    def get_all_versions_for_id_and_topic(self, id_base64, topic):
+        _key = u'topic.%s' % topic
+        _vlist = []
+        _version = 0
+        for _id in self.redis.lrange(_key, 0, -1):
+            _version += 1
+            if _id[3:] == id_base64:
+                _vlist.append(_version)
+        return _vlist
 
 from registered_schema import RegisteredAvroSchema
 

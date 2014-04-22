@@ -16,17 +16,12 @@ SHA256_BYTES = 32
 
 class RegisteredSchema(object):
     '''The RegisteredSchema represents the data we have about how a given schema 
-    string has been associated with topic-version intersections.  That is, a 
-    schema may be registered for more than one topic, and this object should 
-    know about all those associations.  The most recent intersection for each 
-    topic should be in the tv_dict.  
-    
-    The specific attributes of topic and version are there to clarify the topic 
-    and version specific to a context where that applies -- and are NOT used for
-    determining equality.  If, for instance, a schema is registered for topic T 
-    twice (versions 2 and 4), and the schema for T version 2 is requested, the 
-    tv_dict would list 4 for T (the most recent), while the version attribute 
-    would be 2 (specific to the request context).
+    string is currently registered for known topics.  This object only holds the
+    most recent topic-version intersections, so for the (unusual but allowed) 
+    case where a schema has been registered more than once for the same topic, 
+    only the most recent version will be included.  However, _all_ topics for 
+    which the schema string has been registered are included, and must each 
+    indicate their most recent versions.
     
     The canonical schema string is a version with whitespace and other things 
     that will not affect the parsing of the schema normalized.
@@ -34,21 +29,9 @@ class RegisteredSchema(object):
     The IDs are derivative of the canonical schema string, so they are surfaced 
     with @property methods.
     '''
-    def __init__(self, schema_str=None, topic=None, version=None, tv_dict=None):
-        if not tv_dict:
-            tv_dict = dict()
-
-        self.topic = topic
-        self.version = None
-        if version:
-            try:
-                self.version = int(version)
-            except:
-                pass
-        self.tv_dict = tv_dict
-        self.schema_str = schema_str
-        if self.schema_str != None:
-            self.validate_schema_str()
+    def __init__(self):
+        self.schema_str = None
+        self.tv_dict = dict()
 
     def update_from_dict(self, rs_dict):
         if not rs_dict:
@@ -56,14 +39,11 @@ class RegisteredSchema(object):
         # these are derivative values in this object
         _sha256 = rs_dict.pop('sha256_id')
         _md5 = rs_dict.pop('md5_id')
-        # if the canonical version returned differs, store that
+
         self.schema_str = rs_dict.pop('schema', self.schema_str)
+
         # the topic and version may not be the most recent intersection
-        self.topic = rs_dict.pop('topic', self.topic)
-        _v = rs_dict.pop('version', self.version)
-        if _v:
-            self.version = int(_v)
-        # the tv_dict holds the most recent tv intersections
+        # the tv_dict holds only the most recent topic/version intersections
         for _k, _v in rs_dict.iteritems():
             if _k.startswith('topic.'):
                 try:
@@ -75,11 +55,6 @@ class RegisteredSchema(object):
 
     def as_dict(self):
         _d = self.tv_dict.copy()
-        # add the specified topic and version
-        #if self.topic:
-        #    _d['topic'] = self.topic
-        #if self.version:
-        #    _d['version'] = self.version
         # add the canonical version of the schema string
         _d['schema'] = self.canonical_schema_str
         # add the ids -- using the 'id.' prefixes
@@ -176,11 +151,8 @@ class RegisteredSchema(object):
         return '%r' % self.canonical_schema_str
     
     def __str__(self):
-        return u'%s[t=%s[%s], v=%s, md5=%s]' % (self.__class__.__name__,
-                                                self.topic,
-                                                self.serial, 
-                                                self.version,
-                                                self.md5_id)
+        return u'%s[%s, %s]' % (self.__class__.__name__,
+                                self.sha256_id, self.tv_dict)
 
     def __eq__(self, other):
         '''Registered schemas are equal when the underlying canonical schema
@@ -198,10 +170,9 @@ class RegisteredSchema(object):
             return True
         return False
     
-
 class RegisteredAvroSchema(RegisteredSchema):
-    def __init__(self, avro_schema_str=None, topic=None, version=None, tv_dict=None):
-        super(RegisteredAvroSchema, self).__init__(avro_schema_str, topic, version, tv_dict)
+    def __init__(self):
+        super(RegisteredAvroSchema, self).__init__()
 
     def validate_schema_str(self):
         if not super(RegisteredAvroSchema, self).validate_schema_str():
