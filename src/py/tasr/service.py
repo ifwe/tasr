@@ -28,8 +28,7 @@ def set_x_schema_headers(response, registered_schema):
     _md5_id = registered_schema.md5_id
     _sha256_id = registered_schema.sha256_id
     for _t, _v in registered_schema.tv_dict.iteritems():
-        response.add_header('X-Schema-Topic', _t)
-        response.add_header('X-Schema-Version', _v)
+        response.add_header('X-Schema-Topic-Version', '%s=%s' % (_t, _v))
     response.set_header('X-Schema-MD5-ID', _md5_id)
     response.set_header('X-Schema-SHA256-ID', _sha256_id)
     return len(registered_schema.tv_dict)
