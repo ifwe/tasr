@@ -60,7 +60,7 @@ def get_latest_for_topic(topic_name=None):
     _rs = ASR.get_latest_for_topic(topic_name)
     if _rs:
         set_x_schema_headers(response, _rs)
-        return "%s\t%s" % (_rs.sha256_id, _rs.canonical_schema_str) 
+        return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered for topic %s.' % topic_name)
         
@@ -79,7 +79,7 @@ def get_for_topic_and_version(topic_name=None, version=None):
         # client gets headers indicating the version expected.
         _rs.tv_dict[topic_name] = version
         set_x_schema_headers(response, _rs)
-        return "%s\t%s" % (_rs.sha256_id, _rs.canonical_schema_str) 
+        return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema version %s registered for topic %s.' % 
           (version, topic_name))
@@ -91,7 +91,7 @@ def get_for_id(base64_id=None):
     _rs = ASR.get_for_id(base64_id)
     if _rs:
         set_x_schema_headers(response, _rs)
-        return "%s\t%s" % (_rs.sha256_id, _rs.canonical_schema_str) 
+        return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered with id %s' % base64_id)
 

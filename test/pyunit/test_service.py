@@ -120,9 +120,8 @@ class TestTASRService(unittest.TestCase):
                                               method='GET')
         self.assertEqual(200, _get_resp.status_code, 
                          u'Non-200 status code: %s' % _get_resp.status_code)
-        (_id, _schema) = _get_resp.body.split('\t', 1)
-        self.assertEqual(self.schema_str, _schema, 
-                         u'Unexpected body: %s' % _schema)
+        self.assertEqual(self.schema_str, _get_resp.body, 
+                         u'Unexpected body: %s' % _get_resp.body)
 
     def test_reg_and_get_non_existent_version(self):
         _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
@@ -150,9 +149,8 @@ class TestTASRService(unittest.TestCase):
             _get_resp = self.tasr_service.request(_query, method='GET')
             self.assertEqual(200, _get_resp.status_code, 
                              u'Non-200 status code: %s' % _get_resp.status_code)
-            (_id, _schema) = _get_resp.body.split('\t', 1)
-            self.assertEqual(_schemas[_v - 1], _schema, 
-                             u'Unexpected body: %s' % _schema)
+            self.assertEqual(_schemas[_v - 1], _get_resp.body, 
+                             u'Unexpected body: %s' % _get_resp.body)
     
     def test_reg_regmod_reg_then_get_ver_1(self):
         _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
@@ -174,9 +172,8 @@ class TestTASRService(unittest.TestCase):
         _get_resp = self.tasr_service.request(_query, method='GET', expect_errors=True)
         self.assertEqual(200, _get_resp.status_code, 
                          u'Non-200 status code: %s' % _get_resp.status_code)
-        (_id, _schema) = _get_resp.body.split('\t', 1)
-        self.assertEqual(self.schema_str, _schema, 
-                         u'Unexpected body: %s' % _schema)
+        self.assertEqual(self.schema_str, _get_resp.body, 
+                         u'Unexpected body: %s' % _get_resp.body)
         _hdict = extract_hdict(_get_resp.headerlist, 'X-SCHEMA-')
         _t, _v = _hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')
         self.assertEqual(1, int(_v), u'Expected GET to return version of 1.')
