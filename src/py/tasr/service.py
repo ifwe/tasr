@@ -84,7 +84,7 @@ def get_for_topic_and_version(topic_name=None, version=None):
     abort(404, 'No schema version %s registered for topic %s.' % 
           (version, topic_name))
 
-@app.get('/tasr/id/<base64_id>')
+@app.get('/tasr/id/<base64_id:path>') # Base64 IDs can include slashes, so :path
 def get_for_id(base64_id=None):
     if base64_id == None or base64_id == '':
         abort(400, 'Refusing to look for schema for %s' % base64_id)
@@ -96,7 +96,9 @@ def get_for_id(base64_id=None):
     abort(404, 'No schema registered with id %s' % base64_id)
 
 import getopt
-def main(argv):
+def main(argv, out=sys.stdout, err=sys.stderr):
+    sys.stdout = out
+    sys.stderr = err
     _host = 'localhost'
     _port = 8080
     _debug = False
@@ -113,8 +115,9 @@ def main(argv):
         if _opt in ("-d", "--debug"):
             _debug = True
     app.run(host = _host, port = _port, debug = _debug)
+    sys.stdout.write('TASR running...')
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main(sys.argv[1:], sys.stdout, sys.stderr)
 
