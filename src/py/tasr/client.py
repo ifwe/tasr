@@ -31,7 +31,7 @@ def _response_to_registered_schema(schema_str, resp):
     for _tv in _tv_list:
         (_t, _ver) = _tv.split('=', 1)
         _ver = int(_ver)
-        _ras.tv_dict[_t] = _ver
+        _ras.tv_dict[_t.strip()] = _ver
     return _ras
 
 def get_registered_schema_for_topic(topic, version=None, host=TASR_HOST,

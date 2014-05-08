@@ -13,6 +13,7 @@ import unittest
 import tasr.service
 import tasr.client
 import requests
+from requests.packages.urllib3._collections import HTTPHeaderDict
 from requests.packages.urllib3.response import HTTPResponse
 import httmock
 from webtest import TestApp, TestRequest
@@ -47,9 +48,16 @@ class TestTASRClient(unittest.TestCase):
                                          headers=requests_req.headers)
         # have the TestApp wrapper process the TestRequest
         _webtest_resp = self.tasr.request(_webtest_req)
+        # webtest responses support multiple headers with the same key, while 
+        # the requests package holds them in a case-insensitive dict of lists of
+        # (key,value) tuples.  We need to translate by hand here to keep cases
+        # with multiple headers with the same key
+        _headers = HTTPHeaderDict()
+        for _k, _v in _webtest_resp.headers.iteritems():
+            _headers.add(_k, _v)
         # use the webtest TestResponse to build a new requests HTTPResponse
         _requests_http_resp = HTTPResponse(body=_webtest_resp.body, 
-                                           headers=_webtest_resp.headers,
+                                           headers=_headers,
                                            status=_webtest_resp.status_code)
         # get an HTTPAdaptor, then use it to build the requests Response object
         _a = requests.adapters.HTTPAdapter()
@@ -192,12 +200,50 @@ class TestTASRClient(unittest.TestCase):
             except tasr.client.TASRError as te:
                 self.assertTrue(te, 'Missing TASRError')
 
+    def test_obj_reg_50_and_get_by_version(self):
+        with httmock.HTTMock(self.route_to_testapp):
+            _client = tasr.client.TASRClient(self.host, self.port)
+            _schemas = []
+            for _v in range(1, 50):
+                _ver_schema_str = self.schema_str.replace('tagged.events', 
+                                                          'tagged.events.%s' % _v, 1)
+                _schemas.append(_ver_schema_str)
+                _rs = _client.register(_ver_schema_str, self.event_type)
+                self.assertEqual(_ver_schema_str, _rs.schema_str, 'Schema string modified!')
+                self.assertIn(self.event_type, _rs.topics, 'Topic not in registered schema object.')
+                
+            for _v in range(1, 50):
+                _rs = _client.get_for_topic(self.event_type, _v)
+                self.assertEqual(_schemas[_v-1], _rs.canonical_schema_str, 'Unexpected version.')
 
 
+    def test_obj_reg_regmod_reg_then_get_ver_1(self):
+        with httmock.HTTMock(self.route_to_testapp):
+            _client = tasr.client.TASRClient(self.host, self.port)
+            _rs1 = _client.register(self.schema_str, self.event_type)
+            _ssv2 = self.schema_str.replace('tagged.events', 'tagged.events.alt', 1)
+            _rs2 = _client.register(_ssv2, self.event_type)
+            _rs3 = _client.register(self.schema_str, self.event_type)
+            self.assertEqual(3, _rs3.current_version(self.event_type), 'unexpected version')
 
-
-
-
+            # now get version 1 -- should be same schema, and should list 
+            # requested version as "current"
+            _rs = _client.get_for_topic(self.event_type, 1)
+            self.assertEqual(_rs1.canonical_schema_str, _rs.canonical_schema_str, 
+                             'Unexpected schema string change between v1 and v3.')
+            self.assertEqual(1, _rs.current_version(self.event_type), 
+                            'Expected different current version value.')
+    
+    def test_obj_multi_topic_reg(self):
+        with httmock.HTTMock(self.route_to_testapp):
+            _client = tasr.client.TASRClient(self.host, self.port)
+            _rs1 = _client.register(self.schema_str, self.event_type)
+            _alt_topic = 'bob'
+            _rs2 = _client.register(self.schema_str, _alt_topic)
+            self.assertEqual(1, _rs2.current_version(self.event_type), 
+                             'Expected version of 1.')
+            self.assertEqual(1, _rs2.current_version(_alt_topic), 
+                             'Expected version of 1.')
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRClient)
