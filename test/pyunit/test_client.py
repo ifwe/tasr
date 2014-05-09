@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(_test_dir, _src_dir))
 _fix_dir = os.path.abspath(os.path.dirname("%s/../fixtures/" % _test_dir))
 
 import unittest
-import tasr.service
+import tasr.app
 import tasr.client
 import requests
 from requests.packages.urllib3._collections import HTTPHeaderDict
@@ -24,15 +24,15 @@ class TestTASRClient(unittest.TestCase):
         self.event_type = "gold"
         self.avsc_file = "%s/schemas/%s.avsc" % (_fix_dir, self.event_type)
         self.schema_str = open(self.avsc_file, "r").read()
-        self.tasr = TestApp(tasr.service.app)
+        self.tasr = TestApp(tasr.app.app)
         # client settings
         self.host = 'localhost' # should match netloc below
         self.port = 8080        # should match netloc below
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        for _k in tasr.service.ASR.redis.keys():
-            tasr.service.ASR.redis.delete(_k)
+        for _k in tasr.app.ASR.redis.keys():
+            tasr.app.ASR.redis.delete(_k)
 
     @httmock.urlmatch(netloc=r'localhost:8080')
     def route_to_testapp(self, url, requests_req):

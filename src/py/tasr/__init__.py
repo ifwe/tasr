@@ -26,8 +26,11 @@ class AbstractSchemaRepository(object):
     What gets passed back in all cases is a RegisteredSchema object (or None).
     The RegisteredSchema has the canonical schema string as a primary attribute,
     with md5_id and sha256_id attributes automatically derived from the schema.
-    The object also has a tv_dict attribute, which should hold the most recent
-    version the schema represents for each topic it is associated with. 
+    The object also has a tv_dict attribute, which should generally hold the 
+    most recent version the schema represents for each topic it is associated 
+    with.  The only exception is when a schema is retrieved for a topic and 
+    version and that version is not the most recent -- in which case the tv_dict
+    holds the expected version for the requested topic.
     '''
     def __init__(self):
         pass
@@ -46,7 +49,6 @@ class AbstractSchemaRepository(object):
 
 
 import time
-import logging
 import redis
 import base64
 import binascii
@@ -161,7 +163,7 @@ class RedisSchemaRepository(AbstractSchemaRepository):
 
     # exposed, API methods
     def register(self, topic, schema_str):
-        '''
+        '''Register a schema string as a version for a topic.
         '''
         _rs = self._get_registered_schema()
         _rs.schema_str = schema_str

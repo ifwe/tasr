@@ -2,6 +2,40 @@
 Created on Apr 14, 2014
 
 @author: cmills
+
+Here we have a WSGI (web server gateway interface) web app supporting a REST
+API for the Tagged Avro Schema Repository (TASR).  It is implemented in Bottle,
+so it can be run as a stand-alone process (for development), deployed under a
+python package that implements a faster WSGI-compliant web server (gunicorn, 
+FAPWS, tornado), or deployed under a WSGI plugin on a fast, general purpose web 
+server (e.g. -- nginx + uWSGI).
+
+Running in stand-alone mode
+---------------------------
+To run it as a stand-alone process, either call the main() function explicitly, 
+or just run it from the command line:
+
+    python tasr/app.py -h localhost -p 8080
+
+Note that the host and port args are optional, with the defaults shown in the 
+example above.
+
+Be aware that running this service in stand-alone mode is not suitable for prod.
+Bottle's built-in web server is single-threaded and does not handle all the 
+standard POSIX signals as you would expect a (well-behaved) daemon to do.
+
+Running under gunicorn
+----------------------
+Gunicorn is a faster, more stable, reasonably mature WSGI server written in C
+and Python.  It is simple to deploy and suitable for production use (if not as
+fast as nginx + uWSGI). Once gunicorn is installed, firing up a service with 
+four worker threads and debug-level logging looks like this:
+
+    gunicorn -w 4 -b localhost:8080 --log-level debug tasr.app:app
+
+That's it.  A SIGINT will kill it fast.  A SIGTERM will do a graceful shutdown, 
+allowing in-flight requests to be finished before killing the workers.  Adding a
+"-D" will daemonize the process.
 '''
 
 import sys
@@ -9,6 +43,8 @@ from tasr import AvroSchemaRepository
 from bottle import Bottle, request, abort, response
 from avro.schema import SchemaParseException
 
+# If we can't establish an ASR, there's no point in doing anything else here.
+# Note that the issue is usually that Redis isn't running or is inaccessible.
 ASR = None
 try:
     ASR = AvroSchemaRepository()
@@ -18,9 +54,12 @@ except Exception as e:
 
 app = Bottle()
 
-accepted_content_types = ['application/json', 'text/json']
-
-def set_x_schema_headers(response, registered_schema):
+def _set_x_schema_headers(response, registered_schema):
+    '''The body of the response should only contain the schema itself, so any 
+    identifying or contextual (meta) data has to live in the response headers.
+    In this case we include the SHA256 and MD5 ids along with the topic-version
+    intersections.
+    '''
     _md5_id = None
     _sha256_id = None
     _topics = []
@@ -36,7 +75,7 @@ def set_x_schema_headers(response, registered_schema):
 @app.put('/tasr/topic/<topic_name>')
 def register(topic_name=None):
     _ct = str(request.content_type).split(';')[0].strip()
-    if not _ct in accepted_content_types:
+    if not _ct in ['application/json', 'text/json']:
         abort(406, 'Content-Type must be appliction/json or text/json.')
 
     _schema_str = request.body.getvalue()
@@ -46,7 +85,7 @@ def register(topic_name=None):
     try:
         _rs = ASR.register(topic_name, _schema_str)
         if _rs:
-            set_x_schema_headers(response, _rs)
+            _set_x_schema_headers(response, _rs)
         if not _rs.is_valid:
             abort(400, 'Invalid schema.  Failed to register.')
         return
@@ -59,7 +98,7 @@ def get_latest_for_topic(topic_name=None):
         abort(400, 'Refusing to look for schema for %s' % topic_name)
     _rs = ASR.get_latest_for_topic(topic_name)
     if _rs:
-        set_x_schema_headers(response, _rs)
+        _set_x_schema_headers(response, _rs)
         return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered for topic %s.' % topic_name)
@@ -78,7 +117,7 @@ def get_for_topic_and_version(topic_name=None, version=None):
         # specified topic before generating the response headers.  That way the 
         # client gets headers indicating the version expected.
         _rs.tv_dict[topic_name] = version
-        set_x_schema_headers(response, _rs)
+        _set_x_schema_headers(response, _rs)
         return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema version %s registered for topic %s.' % 
@@ -90,7 +129,7 @@ def get_for_id(base64_id=None):
         abort(400, 'Refusing to look for schema for %s' % base64_id)
     _rs = ASR.get_for_id(base64_id)
     if _rs:
-        set_x_schema_headers(response, _rs)
+        _set_x_schema_headers(response, _rs)
         return _rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered with id %s' % base64_id)

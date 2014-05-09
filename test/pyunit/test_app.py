@@ -12,7 +12,7 @@ _fix_dir = os.path.abspath(os.path.dirname("%s/../fixtures/" % _test_dir))
 import unittest
 from webtest import TestApp
 
-import tasr.service
+import tasr.app
 
 def extract_hdict(hlist, prefix=None):
     _hdict = dict()
@@ -37,15 +37,15 @@ class TestTASRService(unittest.TestCase):
         self.event_type = "gold"
         self.avsc_file = "%s/schemas/%s.avsc" % (_fix_dir, self.event_type)
         self.schema_str = open(self.avsc_file, "r").read()
-        self.tasr_service = TestApp(tasr.service.app)
+        self.tasr_service = TestApp(tasr.app.app)
         self.topic_url = 'http://localhost:8080/tasr/topic/%s' % self.event_type
         self.id_url_prefix = 'http://localhost:8080/tasr/id'
         self.content_type = 'application/json; charset=utf8'
     
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        for _k in tasr.service.ASR.redis.keys():
-            tasr.service.ASR.redis.delete(_k)
+        for _k in tasr.app.ASR.redis.keys():
+            tasr.app.ASR.redis.delete(_k)
     
     
     def test_register_schema(self):
