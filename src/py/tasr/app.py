@@ -144,7 +144,7 @@ def main(argv, out=sys.stdout, err=sys.stderr):
     try:
         _opts, _args = getopt.getopt(argv, "h:p:d", ["host=", "port=", "debug"])
     except getopt.GetoptError:
-        print 'service.py -h <hostname> -p <port> [-d]'
+        print 'app.py -h <hostname> -p <port> [-d]'
         sys.exit(2)
     for _opt, _arg in _opts:
         if _opt in ("-h", "--host"):

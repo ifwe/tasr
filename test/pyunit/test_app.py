@@ -31,13 +31,13 @@ def extract_hdict(hlist, prefix=None):
             _hdict[_k].append(_v)
     return _hdict
 
-class TestTASRService(unittest.TestCase):
+class TestTASRApp(unittest.TestCase):
 
     def setUp(self):
         self.event_type = "gold"
         self.avsc_file = "%s/schemas/%s.avsc" % (_fix_dir, self.event_type)
         self.schema_str = open(self.avsc_file, "r").read()
-        self.tasr_service = TestApp(tasr.app.app)
+        self.tasr_app = TestApp(tasr.app.app)
         self.topic_url = 'http://localhost:8080/tasr/topic/%s' % self.event_type
         self.id_url_prefix = 'http://localhost:8080/tasr/id'
         self.content_type = 'application/json; charset=utf8'
@@ -49,7 +49,7 @@ class TestTASRService(unittest.TestCase):
     
     
     def test_register_schema(self):
-        _resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                           content_type=self.content_type, 
                                           body=self.schema_str)
 
@@ -69,7 +69,7 @@ class TestTASRService(unittest.TestCase):
             self.assertEqual(self.event_type, _t, u'Unexpected topic.')
 
     def test_reg_fail_on_empty_schema(self):
-        _resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                           content_type=self.content_type,
                                           expect_errors=True,
                                           body=None)
@@ -77,14 +77,14 @@ class TestTASRService(unittest.TestCase):
         
 
     def test_reg_fail_on_invalid_schema(self):
-        _resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                           content_type=self.content_type,
                                           expect_errors=True,
                                           body="%s }" % self.schema_str)
         self.assertEqual(400, _resp.status_int, u'Expected a 400 status code.')
 
     def test_reg_fail_on_bad_content_type(self):
-        _resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                           content_type='text/plain; charset=utf8',
                                           expect_errors=True,
                                           body=self.schema_str)
@@ -92,7 +92,7 @@ class TestTASRService(unittest.TestCase):
 
 
     def test_reg_and_rereg(self):
-        _resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                           content_type=self.content_type, 
                                           body=self.schema_str)
         self.assertEqual(200, _resp.status_code, 
@@ -103,7 +103,7 @@ class TestTASRService(unittest.TestCase):
         self.assertNotEqual(None, _v0, u'Invalid initial version: %s' % _v0)
 
         # on the reregistration, we should get the same version back
-        _resp1 = self.tasr_service.request(self.topic_url, method='PUT', 
+        _resp1 = self.tasr_app.request(self.topic_url, method='PUT', 
                                            content_type=self.content_type, 
                                            body=self.schema_str)
         _hdict1 = extract_hdict(_resp.headerlist, 'X-SCHEMA-')
@@ -111,12 +111,12 @@ class TestTASRService(unittest.TestCase):
         self.assertEqual(_v0, _v1, u'Reregistration produced a different version.')
         
     def test_reg_and_get_by_md5_id(self):
-        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                               content_type=self.content_type, 
                                               body=self.schema_str)
         _hdict = extract_hdict(_put_resp.headerlist, 'X-SCHEMA-')
         _id = _hdict['X-SCHEMA-MD5-ID'][0]
-        _get_resp = self.tasr_service.request("%s/%s" % (self.id_url_prefix, _id), 
+        _get_resp = self.tasr_app.request("%s/%s" % (self.id_url_prefix, _id), 
                                               method='GET')
         self.assertEqual(200, _get_resp.status_code, 
                          u'Non-200 status code: %s' % _get_resp.status_code)
@@ -124,12 +124,12 @@ class TestTASRService(unittest.TestCase):
                          u'Unexpected body: %s' % _get_resp.body)
 
     def test_reg_and_get_by_sha256_id(self):
-        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                               content_type=self.content_type, 
                                               body=self.schema_str)
         _hdict = extract_hdict(_put_resp.headerlist, 'X-SCHEMA-')
         _id = _hdict['X-SCHEMA-SHA256-ID'][0]
-        _get_resp = self.tasr_service.request("%s/%s" % (self.id_url_prefix, _id), 
+        _get_resp = self.tasr_app.request("%s/%s" % (self.id_url_prefix, _id), 
                                               method='GET')
         self.assertEqual(200, _get_resp.status_code, 
                          u'Non-200 status code: %s' % _get_resp.status_code)
@@ -137,13 +137,13 @@ class TestTASRService(unittest.TestCase):
                          u'Unexpected body: %s' % _get_resp.body)
 
     def test_reg_and_get_non_existent_version(self):
-        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                               content_type=self.content_type, 
                                               body=self.schema_str)
         _hdict = extract_hdict(_put_resp.headerlist, 'X-SCHEMA-')
         _t, _v = _hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')
         _query = "%s/%s" % (self.topic_url, (int(_v) + 1))
-        _get_resp = self.tasr_service.request(_query, method='GET', expect_errors=True)
+        _get_resp = self.tasr_app.request(_query, method='GET', expect_errors=True)
         self.assertEqual(404, _get_resp.status_int, u'Expected a 404 status code.')
 
     def test_reg_50_and_get_by_version(self):
@@ -151,7 +151,7 @@ class TestTASRService(unittest.TestCase):
         for _v in range(1, 50):
             _ver_schema_str = self.schema_str.replace('tagged.events', 'tagged.events.%s' % _v, 1)
             _schemas.append(_ver_schema_str)
-            _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+            _put_resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                                   content_type=self.content_type, 
                                                   body=_ver_schema_str)
             self.assertEqual(200, _put_resp.status_code, 
@@ -159,21 +159,21 @@ class TestTASRService(unittest.TestCase):
             
         for _v in range(1, 50):
             _query = "%s/%s" % (self.topic_url, _v)
-            _get_resp = self.tasr_service.request(_query, method='GET')
+            _get_resp = self.tasr_app.request(_query, method='GET')
             self.assertEqual(200, _get_resp.status_code, 
                              u'Non-200 status code: %s' % _get_resp.status_code)
             self.assertEqual(_schemas[_v - 1], _get_resp.body, 
                              u'Unexpected body: %s' % _get_resp.body)
     
     def test_reg_regmod_reg_then_get_ver_1(self):
-        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                               content_type=self.content_type, 
                                               body=self.schema_str)
         _schema_str_2 = self.schema_str.replace('tagged.events', 'tagged.events.alt', 1)
-        _put_resp2 = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp2 = self.tasr_app.request(self.topic_url, method='PUT', 
                                                content_type=self.content_type, 
                                                body=_schema_str_2)
-        _put_resp3 = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp3 = self.tasr_app.request(self.topic_url, method='PUT', 
                                                content_type=self.content_type, 
                                                body=self.schema_str)
         _hdict = extract_hdict(_put_resp3.headerlist, 'X-SCHEMA-')
@@ -182,7 +182,7 @@ class TestTASRService(unittest.TestCase):
 
         # now get version 1 -- should be same schema, but diff ver in headers        
         _query = "%s/%s" % (self.topic_url, 1)
-        _get_resp = self.tasr_service.request(_query, method='GET', expect_errors=True)
+        _get_resp = self.tasr_app.request(_query, method='GET', expect_errors=True)
         self.assertEqual(200, _get_resp.status_code, 
                          u'Non-200 status code: %s' % _get_resp.status_code)
         self.assertEqual(self.schema_str, _get_resp.body, 
@@ -192,12 +192,12 @@ class TestTASRService(unittest.TestCase):
         self.assertEqual(1, int(_v), u'Expected GET to return version of 1.')
     
     def test_multi_topic_reg(self):
-        _put_resp = self.tasr_service.request(self.topic_url, method='PUT', 
+        _put_resp = self.tasr_app.request(self.topic_url, method='PUT', 
                                               content_type=self.content_type, 
                                               body=self.schema_str)
         _alt_topic = 'bob'
         _alt_topic_url = 'http://localhost:8080/tasr/topic/%s' % _alt_topic
-        _put_resp2 = self.tasr_service.request(_alt_topic_url, method='PUT', 
+        _put_resp2 = self.tasr_app.request(_alt_topic_url, method='PUT', 
                                                content_type=self.content_type, 
                                                body=self.schema_str)
         _tv_dict = dict()
@@ -210,5 +210,5 @@ class TestTASRService(unittest.TestCase):
 
     
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRService)
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRApp)
     unittest.TextTestRunner(verbosity=2).run(suite)
