@@ -20,67 +20,67 @@ class TASRError(Exception):
     '''Something went wrong with a TASR interaction'''
 
 def _response_to_registered_schema(schema_str, resp):
-    _ras = RegisteredAvroSchema()
-    _ras.schema_str = schema_str
+    ras = RegisteredAvroSchema()
+    ras.schema_str = schema_str
     # check that it came through as expected
-    _sha256_id = resp.headers["X-SCHEMA-SHA256-ID"]
-    if not _ras.sha256_id == _sha256_id:
+    sha256_id = resp.headers["X-SCHEMA-SHA256-ID"]
+    if not ras.sha256_id == sha256_id:
         raise TASRError('Schema was modified in transit.') 
     # set the topic-version intersections from the headers
-    _tv_list = resp.headers["X-SCHEMA-TOPIC-VERSION"].split(',')
-    for _tv in _tv_list:
-        (_t, _ver) = _tv.split('=', 1)
-        _ver = int(_ver)
-        _ras.tv_dict[_t.strip()] = _ver
-    return _ras
+    tv_list = resp.headers["X-SCHEMA-TOPIC-VERSION"].split(',')
+    for tv in tv_list:
+        (t, ver) = tv.split('=', 1)
+        ver = int(ver)
+        ras.tv_dict[t.strip()] = ver
+    return ras
 
 def get_registered_schema_for_topic(topic, version=None, host=TASR_HOST,
                                     port=TASR_PORT, timeout=TASR_TIMEOUT):
     try:
-        _url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic)
+        url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic)
         if version:
-            _url = '%s/%s' % (_url, version)
-        _resp = requests.get(_url, timeout=timeout)
-        if _resp == None:
-            raise TASRError('Timeout for request to %s' % _url)
-        if 404 == _resp.status_code:
+            url = '%s/%s' % (url, version)
+        resp = requests.get(url, timeout=timeout)
+        if resp == None:
+            raise TASRError('Timeout for request to %s' % url)
+        if 404 == resp.status_code:
             raise TASRError('No such version.')
-        if not 200 == _resp.status_code:
+        if not 200 == resp.status_code:
             raise TASRError('Failed request to %s (status code: %s)' % 
-                            (_url, _resp.status_code))
-        return _response_to_registered_schema(_resp.content, _resp)
+                            (url, resp.status_code))
+        return _response_to_registered_schema(resp.content, resp)
     except Exception as e:
         raise TASRError(e)
 
 def get_registered_schema_for_id_str(id_str, host=TASR_HOST, 
                                     port=TASR_PORT, timeout=TASR_TIMEOUT):
     try:
-        _url = 'http://%s:%s/tasr/id/%s' % (host, port, id_str)
-        _resp = requests.get(_url, timeout=timeout)
-        if _resp == None:
-            raise TASRError('Timeout for request to %s' % _url)
-        if 404 == _resp.status_code:
+        url = 'http://%s:%s/tasr/id/%s' % (host, port, id_str)
+        resp = requests.get(url, timeout=timeout)
+        if resp == None:
+            raise TASRError('Timeout for request to %s' % url)
+        if 404 == resp.status_code:
             raise TASRError('No schema for id.')
-        if not 200 == _resp.status_code:
+        if not 200 == resp.status_code:
             raise TASRError('Failed request to %s (status code: %s)' % 
-                            (_url, _resp.status_code))
-        return _response_to_registered_schema(_resp.content, _resp)
+                            (url, resp.status_code))
+        return _response_to_registered_schema(resp.content, resp)
     except Exception as e:
         raise TASRError(e)
 
 def register_schema_for_topic(schema_str, topic, host=TASR_HOST, port=TASR_PORT,
                               timeout=TASR_TIMEOUT):
     try:
-        _url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic)
-        _headers = {'content-type': 'application/json; charset=utf8', }
-        _resp = requests.put(_url, data=schema_str, timeout=timeout,
-                             headers=_headers)
-        if _resp == None:
-            raise TASRError('Timeout for request to %s' % _url)
-        if not 200 == _resp.status_code:
+        url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic)
+        headers = {'content-type': 'application/json; charset=utf8', }
+        resp = requests.put(url, data=schema_str, timeout=timeout,
+                             headers=headers)
+        if resp == None:
+            raise TASRError('Timeout for request to %s' % url)
+        if not 200 == resp.status_code:
             raise TASRError('Failed request to %s (status code: %s)' % 
-                            (_url, _resp.status_code))
-        return _response_to_registered_schema(schema_str, _resp)
+                            (url, resp.status_code))
+        return _response_to_registered_schema(schema_str, resp)
     except Exception as e:
         raise TASRError(e)
 

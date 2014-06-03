@@ -60,33 +60,29 @@ def _set_x_schema_headers(response, registered_schema):
     In this case we include the SHA256 and MD5 ids along with the topic-version
     intersections.
     '''
-    _md5_id = None
-    _sha256_id = None
-    _topics = []
-    _versions = []
-    _md5_id = registered_schema.md5_id
-    _sha256_id = registered_schema.sha256_id
-    for _t, _v in registered_schema.tv_dict.iteritems():
-        response.add_header('X-Schema-Topic-Version', '%s=%s' % (_t, _v))
-    response.set_header('X-Schema-MD5-ID', _md5_id)
-    response.set_header('X-Schema-SHA256-ID', _sha256_id)
+    md5_id = registered_schema.md5_id
+    sha256_id = registered_schema.sha256_id
+    for t, v in registered_schema.tv_dict.iteritems():
+        response.add_header('X-Schema-Topic-Version', '%s=%s' % (t, v))
+    response.set_header('X-Schema-MD5-ID', md5_id)
+    response.set_header('X-Schema-SHA256-ID', sha256_id)
     return len(registered_schema.tv_dict)
 
 @app.put('/tasr/topic/<topic_name>')
 def register(topic_name=None):
-    _ct = str(request.content_type).split(';')[0].strip()
-    if not _ct in ['application/json', 'text/json']:
+    ct = str(request.content_type).split(';')[0].strip()
+    if not ct in ['application/json', 'text/json']:
         abort(406, 'Content-Type must be appliction/json or text/json.')
 
-    _schema_str = request.body.getvalue()
-    if _schema_str == None or _schema_str == '':
+    schema_str = request.body.getvalue()
+    if schema_str == None or schema_str == '':
         abort(400, 'Refusing to register nothing for %s' % topic_name)
     
     try:
-        _rs = ASR.register(topic_name, _schema_str)
-        if _rs:
-            _set_x_schema_headers(response, _rs)
-        if not _rs.is_valid:
+        rs = ASR.register(topic_name, schema_str)
+        if rs:
+            _set_x_schema_headers(response, rs)
+        if not rs.is_valid:
             abort(400, 'Invalid schema.  Failed to register.')
         return
     except SchemaParseException:
@@ -96,10 +92,10 @@ def register(topic_name=None):
 def get_latest_for_topic(topic_name=None):
     if topic_name == None or topic_name == '':
         abort(400, 'Refusing to look for schema for %s' % topic_name)
-    _rs = ASR.get_latest_for_topic(topic_name)
-    if _rs:
-        _set_x_schema_headers(response, _rs)
-        return _rs.canonical_schema_str
+    rs = ASR.get_latest_for_topic(topic_name)
+    if rs:
+        _set_x_schema_headers(response, rs)
+        return rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered for topic %s.' % topic_name)
         
@@ -109,16 +105,16 @@ def get_for_topic_and_version(topic_name=None, version=None):
         abort(400, 'Refusing to look for schema for %s' % topic_name)
     if version == None or version.lower() == 'latest':
         return get_latest_for_topic(topic_name)
-    _rs = ASR.get_for_topic_and_version(topic_name, version)
-    if _rs:
+    rs = ASR.get_for_topic_and_version(topic_name, version)
+    if rs:
         # With multiple versions for a topic, only the latest is included in the 
         # retrieved RS.  If we asked for a version for a topic and got back an RS 
         # with a differing version, it is safe to overwrite the version for the
         # specified topic before generating the response headers.  That way the 
         # client gets headers indicating the version expected.
-        _rs.tv_dict[topic_name] = version
-        _set_x_schema_headers(response, _rs)
-        return _rs.canonical_schema_str
+        rs.tv_dict[topic_name] = version
+        _set_x_schema_headers(response, rs)
+        return rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema version %s registered for topic %s.' % 
           (version, topic_name))
@@ -127,10 +123,10 @@ def get_for_topic_and_version(topic_name=None, version=None):
 def get_for_id(base64_id=None):
     if base64_id == None or base64_id == '':
         abort(400, 'Refusing to look for schema for %s' % base64_id)
-    _rs = ASR.get_for_id(base64_id)
-    if _rs:
-        _set_x_schema_headers(response, _rs)
-        return _rs.canonical_schema_str
+    rs = ASR.get_for_id(base64_id)
+    if rs:
+        _set_x_schema_headers(response, rs)
+        return rs.canonical_schema_str
     # return nothing if there is no schema registered for the topic name
     abort(404, 'No schema registered with id %s' % base64_id)
 
@@ -138,22 +134,22 @@ import getopt
 def main(argv, out=sys.stdout, err=sys.stderr):
     sys.stdout = out
     sys.stderr = err
-    _host = 'localhost'
-    _port = 8080
-    _debug = False
+    host = 'localhost'
+    port = 8080
+    debug = False
     try:
-        _opts, _args = getopt.getopt(argv, "h:p:d", ["host=", "port=", "debug"])
+        opts = getopt.getopt(argv, "h:p:d", ["host=", "port=", "debug"])[0]
     except getopt.GetoptError:
         print 'app.py -h <hostname> -p <port> [-d]'
         sys.exit(2)
-    for _opt, _arg in _opts:
-        if _opt in ("-h", "--host"):
-            _host = _arg
-        if _opt in ("-p", "--port"):
-            _port = _arg
-        if _opt in ("-d", "--debug"):
-            _debug = True
-    app.run(host = _host, port = _port, debug = _debug)
+    for opt, arg in opts:
+        if opt in ("-h", "--host"):
+            host = arg
+        if opt in ("-p", "--port"):
+            port = arg
+        if opt in ("-d", "--debug"):
+            debug = True
+    app.run(host = host, port = port, debug = debug)
     sys.stdout.write('TASR running...')
 
 
