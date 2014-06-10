@@ -56,8 +56,8 @@ class TestTASRApp(unittest.TestCase):
         self.assertEqual(200, resp.status_code, 
                          u'Non-200 status code: %s' % resp.status_code)
 
-        expected_x_headers = ['X-SCHEMA-TOPIC-VERSION','X-SCHEMA-MD5-ID', 
-                               'X-SCHEMA-SHA256-ID']
+        expected_x_headers = ['X-SCHEMA-TOPIC-VERSION','X-SCHEMA-SHA256-ID',
+                              'X-SCHEMA-TOPIC-VERSION-TIMESTAMP','X-SCHEMA-MD5-ID']
         
         hdict = extract_hdict(resp.headerlist, 'X-SCHEMA-')
         
@@ -67,6 +67,11 @@ class TestTASRApp(unittest.TestCase):
         for tv in hdict['X-SCHEMA-TOPIC-VERSION']:
             t = tv.split('=')[0]
             self.assertEqual(self.event_type, t, u'Unexpected topic.')
+
+        for ts in hdict['X-SCHEMA-TOPIC-VERSION-TIMESTAMP']:
+            t = ts.split('=')[0]
+            self.assertEqual(self.event_type, t, u'Unexpected topic.')
+
 
     def test_reg_fail_on_empty_schema(self):
         resp = self.tasr_app.request(self.topic_url, method='PUT', 

@@ -32,6 +32,12 @@ def _response_to_registered_schema(schema_str, resp):
         (t, ver) = tv.split('=', 1)
         ver = int(ver)
         ras.tv_dict[t.strip()] = ver
+    # set the topic-version intersection timestamps from the headers
+    ts_list = resp.headers["X-SCHEMA-TOPIC-VERSION-TIMESTAMP"].split(',')
+    for tse in ts_list:
+        (t, ts) = tse.split('=', 1)
+        ts = long(ts)
+        ras.ts_dict[t.strip()] = ts
     return ras
 
 def get_registered_schema_for_topic(topic, version=None, host=TASR_HOST,

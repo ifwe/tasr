@@ -73,13 +73,18 @@ class RedisSchemaRepository(AbstractSchemaRepository):
     hash entry (that is, 'id.<sha256_id>').
     
     In addition to the hash entries, there are lists for each topic that has 
-    registered schemas.  Each list entry is an SHA256 id key (i.e. -- 
-    'id.<sha256_id>').  The version is the "counting from 1" index of the entry
-    in the list.  So, the first entry in the list corresponds to version 1.
-    These are lists, not sets, as it is possible for a schema to be registered, 
-    then overridden, then reverted to -- in which case the same id key can occur 
-    more than once in the list.
-        
+    registered schemas.  Each list key is in the form 'topic.<topic name>', and 
+    each list entry is an SHA256 id key (i.e. -- 'id.<sha256_id>').  The version 
+    is the "counting from 1" index of the entry in the list.  So, the first 
+    entry in the list corresponds to version 1. These are lists, not sets, as it 
+    is possible for a schema to be registered, then overridden, then reverted to 
+    -- in which case the same id key can occur more than once in the list.
+    
+    A second list is used to keep track of when (UTC timestamp) a schema was
+    associated with a topic.  This is a list with a key in the format 
+    'topic_ts.<topic name>', storing the numeric timestamp (seconds since the 
+    epoch) when the assignment happened.
+    
     Retrieval of schemas by SHA256 ID is simple, requiring a single Redis 
     operation.  However, retrieving by MD5 ID or, more commonly, by topic and 
     version, requires two operations.  It is much faster to execute both in a 
@@ -174,6 +179,8 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         sha256_key = u'id.%s' % rs.sha256_id
         md5_key = u'id.%s' % rs.md5_id
         topic_key = u'topic.%s' % topic
+        topic_ts_key = u'topic_ts.%s' % topic
+        now = long(time.time())
         
         d = self._get_for_sha256_id(rs.sha256_id)
         if d:
@@ -187,17 +194,23 @@ class RedisSchemaRepository(AbstractSchemaRepository):
         if not rs.current_version(topic):
             # no version for this topic, so add it
             ver = self.redis.rpush(topic_key, sha256_key)
-            rs.version = ver 
+            #rs.version = ver 
             self.redis.hset(sha256_key, topic_key, ver)
             rs.tv_dict[topic] = ver
+            self.redis.rpush(topic_ts_key, now)
+            self.redis.hset(sha256_key, topic_ts_key, now)
+            rs.ts_dict[topic] = now
         else:
             last_ver_sha256_key = self.redis.lrange(topic_key, -1, -1)[0]
             if not last_ver_sha256_key == sha256_key:
                 # need to override outdated version entry with new one
                 ver = self.redis.rpush(topic_key, sha256_key)
-                rs.version = ver 
+                #rs.version = ver
                 self.redis.hset(sha256_key, topic_key, ver)
                 rs.tv_dict[topic] = ver
+                self.redis.rpush(topic_ts_key, now)
+                self.redis.hset(sha256_key, topic_ts_key, now)
+                rs.ts_dict[topic] = now
                 
         return rs
     

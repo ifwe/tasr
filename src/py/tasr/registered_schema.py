@@ -32,6 +32,7 @@ class RegisteredSchema(object):
     def __init__(self):
         self.schema_str = None
         self.tv_dict = dict()
+        self.ts_dict = dict()
 
     def update_from_dict(self, rs_dict):
         if not rs_dict:
@@ -44,6 +45,7 @@ class RegisteredSchema(object):
 
         # the topic and version may not be the most recent intersection
         # the tv_dict holds only the most recent topic/version intersections
+        # the ts_dict holds the timestamps for those t/v intersections
         for k, v in rs_dict.iteritems():
             if k.startswith('topic.'):
                 try:
@@ -52,9 +54,17 @@ class RegisteredSchema(object):
                     self.tv_dict[topic] = version
                 except:
                     pass
+            if k.startswith('topic_ts.'):
+                try:
+                    topic = k[9:]
+                    timestamp = long(v)
+                    self.ts_dict[topic] = timestamp
+                except:
+                    pass
 
     def as_dict(self):
         d = self.tv_dict.copy()
+        d.update(self.ts_dict)
         # add the canonical version of the schema string
         d['schema'] = self.canonical_schema_str
         # add the ids -- using the 'id.' prefixes
@@ -145,6 +155,11 @@ class RegisteredSchema(object):
     def current_version(self, topic):
         if self.tv_dict.has_key(topic):
             return self.tv_dict[topic]
+        return None
+
+    def current_version_timestamp(self, topic):
+        if self.ts_dict.has_key(topic):
+            return self.ts_dict[topic]
         return None
     
     def __repr__(self):

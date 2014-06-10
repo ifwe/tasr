@@ -75,6 +75,7 @@ class TestTASRClient(unittest.TestCase):
                                                        self.host, self.port)
             self.assertEqual(self.schema_str, rs.schema_str, 'Schema string modified!')
             self.assertIn(self.event_type, rs.topics, 'Topic not in registered schema object.')
+            self.assertIn(self.event_type, rs.ts_dict.keys(), 'Topic not in registration timestamps.')
 
     def test_obj_register_schema(self):
         with httmock.HTTMock(self.route_to_testapp):
@@ -82,6 +83,7 @@ class TestTASRClient(unittest.TestCase):
             rs = client.register(self.schema_str, self.event_type)
             self.assertEqual(self.schema_str, rs.schema_str, 'Schema string modified!')
             self.assertIn(self.event_type, rs.topics, 'Topic not in registered schema object.')
+            self.assertIn(self.event_type, rs.ts_dict.keys(), 'Topic not in registration timestamps.')
 
     def test_bare_reg_fail_on_empty_schema(self):
         with httmock.HTTMock(self.route_to_testapp):

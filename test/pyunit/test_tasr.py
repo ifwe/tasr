@@ -11,6 +11,7 @@ fix_dir = os.path.abspath(os.path.dirname("%s/../fixtures/" % test_dir))
 
 import unittest
 import avro.schema
+import time
 from tasr import AvroSchemaRepository
 
 try:
@@ -45,6 +46,8 @@ class TestTASR(unittest.TestCase):
     def test_register_schema(self):
         rs = self.asr.register(self.event_type, self.schema_str)
         self.assertFalse(rs == None, u'Failed to register schema')
+        diff = long(time.time()) - rs.current_version_timestamp(self.event_type)
+        self.assertTrue(diff <= 1, 'crazy timestamp')
 
     def test_register_fail_for_empty_schema(self):
         try:
