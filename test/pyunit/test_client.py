@@ -24,7 +24,7 @@ class TestTASRClient(unittest.TestCase):
         self.event_type = "gold"
         self.avsc_file = "%s/schemas/%s.avsc" % (fix_dir, self.event_type)
         self.schema_str = open(self.avsc_file, "r").read()
-        self.tasr = TestApp(tasr.app.app)
+        self.tasr = TestApp(tasr.app.TASR_APP)
         # client settings
         self.host = 'localhost' # should match netloc below
         self.port = 8080        # should match netloc below
@@ -147,7 +147,7 @@ class TestTASRClient(unittest.TestCase):
             reg_rs = tasr.client.register_schema_for_topic(self.schema_str, 
                                                            self.event_type,
                                                            self.host, self.port)
-            get_rs = tasr.client.get_registered_schema_for_id_str(reg_rs.md5_id,
+            get_rs = tasr.client.get_reg_schema_for_id_str(reg_rs.md5_id,
                                                                   self.host, 
                                                                   self.port)
             self.assertEqual(reg_rs, get_rs, 'registered and retrieved schemas unequal')
@@ -164,7 +164,7 @@ class TestTASRClient(unittest.TestCase):
             reg_rs = tasr.client.register_schema_for_topic(self.schema_str, 
                                                            self.event_type,
                                                            self.host, self.port)
-            get_rs = tasr.client.get_registered_schema_for_id_str(reg_rs.sha256_id,
+            get_rs = tasr.client.get_reg_schema_for_id_str(reg_rs.sha256_id,
                                                                   self.host, 
                                                                   self.port)
             self.assertEqual(reg_rs, get_rs, 'registered and retrieved schemas unequal')
@@ -183,7 +183,7 @@ class TestTASRClient(unittest.TestCase):
                                                            self.host, self.port)
             bad_ver = reg_rs.current_version(self.event_type) + 1
             try:
-                tasr.client.get_registered_schema_for_topic(self.event_type,
+                tasr.client.get_reg_schema_for_topic(self.event_type,
                                                             bad_ver,
                                                             self.host, 
                                                             self.port)

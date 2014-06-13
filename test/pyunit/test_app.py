@@ -11,7 +11,6 @@ fix_dir = os.path.abspath(os.path.dirname("%s/../fixtures/" % test_dir))
 
 import unittest
 from webtest import TestApp
-
 import tasr.app
 
 def extract_hdict(hlist, prefix=None):
@@ -37,7 +36,7 @@ class TestTASRApp(unittest.TestCase):
         self.event_type = "gold"
         self.avsc_file = "%s/schemas/%s.avsc" % (fix_dir, self.event_type)
         self.schema_str = open(self.avsc_file, "r").read()
-        self.tasr_app = TestApp(tasr.app.app)
+        self.tasr_app = TestApp(tasr.app.TASR_APP)
         self.topic_url = 'http://localhost:8080/tasr/topic/%s' % self.event_type
         self.id_url_prefix = 'http://localhost:8080/tasr/id'
         self.content_type = 'application/json; charset=utf8'
@@ -220,7 +219,6 @@ class TestTASRApp(unittest.TestCase):
         self.assertEqual(1, tv_dict[self.event_type], u'Expected version of 1.')            
         self.assertEqual(1, tv_dict[alt_topic], u'Expected version of 1.')            
 
-    
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRApp)
     unittest.TextTestRunner(verbosity=2).run(suite)
