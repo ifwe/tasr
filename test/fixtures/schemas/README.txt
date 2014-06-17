@@ -9,10 +9,16 @@ rollout of the HDFS event archive.  These schemas are used here for unit tests,
 but will also be added to the schema repository in the same form as version 0 
 of each event_type/topic specific schema.
 
-The event types initially covered are: browse_click_tracking, gold, login, 
+The event types covered are: browse_click_tracking, gold, login_detail, 
 message, newsfeed_clicks, and page_view.  These were chosen in part because of 
 their varied structures, but also to include the events required to calculate
 DAU (login and page_view).
+
+Note that Kafka topic names are different than event types.  For each event type
+we can have two topics -- one for the old, raw format messages and one for the 
+new, serialized messages.  The old topic name is the same as the event type, but
+the new topic name adds an "s_" prefix (e.g. -- the page_view event type is 
+associated with both the "page_view" and "s_page_view" topics).
 
 Generally speaking, the PHP code logs events to Bruce using the common function 
 tag_log::log_message_pageview() (or the alias method tag_log::data()).  This 
