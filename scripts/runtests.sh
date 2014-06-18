@@ -1,6 +1,7 @@
 #!/bin/bash
 
-LOGDIR=./reports
+SCRIPTDIR=$( pwd )/$( dirname "${BASH_SOURCE-$0}" )
+LOGDIR=$SCRIPTDIR/../reports
 LOGFILE=$LOGDIR/pyunit.log
 PYUNIT_DIR=./test/pyunit
 
