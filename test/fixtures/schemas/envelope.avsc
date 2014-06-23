@@ -6,12 +6,16 @@
      {"name": "source__agent", "type": "string"},
      {"name": "source__ip_address", "type": "string"},
 
-     {"name": "envelope__fields", "type": {"type":"array", "items": "string"} },
-     
+     {"name": "envelope__fields", "type": {"type":"array",
+                                           "items": [ "null", {
+                                                "name": "value",
+                                                "type": "string"
+                                            } ] } },
+
      {"name": "meta__topic_name", "type": ["null", "string"]},
      {"name": "meta__handlers", "type":
-       [ "null", 
-         { "type": "array", "items": 
+       [ "null",
+         { "type": "array", "items":
            { "type": "record",
              "name": "Handler",
              "fields": [
@@ -19,9 +23,9 @@
                {"name": "agent", "type": "string"},
                {"name": "ip_address", "type": "string"}
              ]
-           } 
-         } 
-       ] 
+           }
+         }
+       ]
      }
  ]
 }
