@@ -4,7 +4,7 @@ SCRIPTDIR=$( pwd )/$( dirname "${BASH_SOURCE-$0}" )
 SCHEMA_DIR=$SCRIPTDIR/../test/fixtures/schemas
 CURL=/usr/bin/curl
 TASR_URL=http://dhdp2jump01:8080/tasr/topic
-SCHEMAS=(browse_click_tracking gold login_detail message newsfeed_clicks page_view)
+SCHEMAS=(browse_click_tracking envelope gold login_detail message newsfeed_clicks page_view)
 
 cd $SCHEMA_DIR;
 
