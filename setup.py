@@ -6,10 +6,10 @@ setup(
     version="0.2",
     description="Tagged Avro Schema Repository",
     package_dir = {'': 'src/py'},
-    packages=find_packages(),
+    packages=find_packages('src/py'),
     include_package_data=True,
     install_requires=['avro','bottle','redis','requests'],
-    
+
     # metadata for upload to PyPI
     author = 'Chris Mills',
     author_email = 'cmills@tagged.com',
