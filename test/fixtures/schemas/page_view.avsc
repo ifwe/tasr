@@ -12,13 +12,13 @@
      {"name": "page_view__ips", "type": "string"},
      {"name": "page_view__is_redirect", "type": "boolean"},
      {"name": "page_view__guid", "type": "string"},
-     {"name": "page_view__domain", "type": "string"},
-     {"name": "page_view__browser_id", "type": "string"},
+     {"name": "page_view__domain", "type": ["null", "string"]},
+     {"name": "page_view__browser_id", "type": ["null", "string"]},
 
      {"name": "meta__topic_name", "type": ["null", "string"]},
      {"name": "meta__handlers", "type":
-       [ "null", 
-         { "type": "array", "items": 
+       [ "null",
+         { "type": "array", "items":
            { "type": "record",
              "name": "Handler",
              "fields": [
@@ -26,9 +26,9 @@
                {"name": "agent", "type": "string"},
                {"name": "ip_address", "type": "string"}
              ]
-           } 
-         } 
-       ] 
+           }
+         }
+       ]
      }
  ]
 }
