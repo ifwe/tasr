@@ -39,6 +39,7 @@ import io
 import struct
 from tasr.registered_schema import RegisteredSchema
 
+
 class RedisSchemaRepository(object):
     '''The Redis-based implementation of the schema repository uses the
     List and Hash structures provided by Redis as the backing store.
@@ -48,20 +49,22 @@ class RedisSchemaRepository(object):
     and schema.  Additionally, for each topic the schema is registered for, the
     hash entry has a 'topic.<topic>' field that holds a version number.  The
     version is the latest version for a topic, so if the same schema has been
-    registered more than once for a topic, the hash's entry only lists the last.
+    registered more than once for a topic, the hash's entry only lists the
+    version last registered for the topic.
 
     There is a secondary hash entry used to provide an index from the md5_id
-    values.  The key is in the form 'id.<md5_id>', and the hash entry only holds
-    one field, 'sha256_id', with the key value you need to look up the primary
-    hash entry (that is, 'id.<sha256_id>').
+    values.  The key is in the form 'id.<md5_id>', and the hash entry only
+    holds one field, 'sha256_id', with the key value you need to look up the
+    primary hash entry (that is, 'id.<sha256_id>').
 
     In addition to the hash entries, there are lists for each topic that has
     registered schemas.  Each list key is in the form 'topic.<topic name>', and
-    each list entry is an SHA256 id key (i.e. -- 'id.<sha256_id>').  The version
-    is the "counting from 1" index of the entry in the list.  So, the first
-    entry in the list corresponds to version 1. These are lists, not sets, as it
-    is possible for a schema to be registered, then overridden, then reverted to
-    -- in which case the same id key can occur more than once in the list.
+    each list entry is an SHA256 id key (i.e. -- 'id.<sha256_id>').  The
+    version is the "counting from 1" index of the entry in the list.  So, the
+    first entry in the list corresponds to version 1. These are lists, not
+    sets, as it is possible for a schema to be registered, then overridden,
+    then reverted to -- in which case the same id key can occur more than once
+    in the list.
 
     A second list is used to keep track of when (UTC timestamp) a schema was
     associated with a topic.  This is a list with a key in the format
@@ -71,7 +74,7 @@ class RedisSchemaRepository(object):
     Retrieval of schemas by SHA256 ID is simple, requiring a single Redis
     operation.  However, retrieving by MD5 ID or, more commonly, by topic and
     version, requires two operations.  It is much faster to execute both in a
-    single call, so we use the LUA script support in Redis to enable this.  This
+    single call, so we use the LUA script support in Redis to enable this. This
     approach allows us to avoid the latency of a second round-trip to Redis.
     '''
     def __init__(self, host='localhost', port=6379, db=0):
@@ -80,14 +83,18 @@ class RedisSchemaRepository(object):
         # register lua scripts in Redis
         self.lua_get_for_md5 = None
         self.lua_get_for_topic_and_version = None
+        self.lua_getcur_versions = None
         try:
             self._register_lua_get_for_md5()
             self._register_lua_get_for_t_and_v()
+            self._register_lua_get_cur_versions()
         except redis.exceptions.ConnectionError:
             raise Exception(u'No Redis at %s on port %s and db %s' %
                             (host, port, db))
 
+    ##########################################################################
     # LUA script registrations
+    ##########################################################################
     def _register_lua_get_for_md5(self):
         '''Registers a LUA script to retrieve a registered schema's main hash
         data starting with an md5 id.
@@ -116,19 +123,36 @@ class RedisSchemaRepository(object):
         '''
         self.lua_get_for_topic_and_version = self.redis.register_script(lua)
 
+    def _register_lua_get_cur_versions(self):
+        '''  '''
+        lua = '''
+        local tvlist={}
+        local topics=redis.call('keys', 'topic.*')
+        for _,topic_name in ipairs(topics) do
+            tvlist[#tvlist+1] = topic_name
+            tvlist[#tvlist+1] = redis.call('llen', topic_name)
+        end
+        return tvlist
+        '''
+        self.lua_getcur_versions = self.redis.register_script(lua)
+
+
+    ##########################################################################
     # util methods
+    ##########################################################################
     def _get_registered_schema(self):
         '''Returns a RegisteredSchema object.  Override this in subclasses
         when a more specific class (i.e. -- RegisteredAvroSchema) is used.
         '''
         return RegisteredSchema()
 
-    def _hgetall_seq_2_dict(self, vlist):
+    @staticmethod
+    def _hgetall_seq_2_dict(vlist):
         '''The HGETALL Redis command returns a "[<name0>,<value0>,<name1>, ...]
         list, which we want to turn into a dict in several cases.
         '''
         if not len(vlist) % 2 == 0:
-            raise Exception('Bad value list.  Must have even number of values.')
+            raise Exception('Must have an even number of values in the list.')
         idx = 0
         rdict = dict()
         while idx < len(vlist):
@@ -157,9 +181,11 @@ class RedisSchemaRepository(object):
         '''
         key = u'id.%s' % md5_base64_id
         rvals = self.lua_get_for_md5(keys=[key, ])
-        return self._hgetall_seq_2_dict(rvals)
+        return RedisSchemaRepository._hgetall_seq_2_dict(rvals)
 
+    ##########################################################################
     # exposed, API methods
+    ##########################################################################
     def register(self, topic, schema_str):
         '''Register a schema string as a version for a topic.
         '''
@@ -222,7 +248,7 @@ class RedisSchemaRepository(object):
             index -= 1  # ver counts from 1, index from 0
         rvals = self.lua_get_for_topic_and_version(keys=[key, index, ])
         if rvals:
-            rs_d = self._hgetall_seq_2_dict(rvals)
+            rs_d = RedisSchemaRepository._hgetall_seq_2_dict(rvals)
             retrieved_rs = self._get_registered_schema()
             retrieved_rs.update_from_dict(rs_d)
             return retrieved_rs
@@ -245,8 +271,48 @@ class RedisSchemaRepository(object):
             return retrieved_rs
         return None
 
-    def get_all_versions_for_id_and_topic(self, id_base64, topic):
-        '''This does not come up much, so we don't bother with a LUA script.
+    def get_for_schema_str(self, schema_str):
+        '''Passing in a schema string, retrieve the RegisteredSchema object
+        associated with the passed schema string. We rely on the
+        RegisteredSchema class' canonicalization and the SHA256 fingerprint
+        figured for the canonical schema string.
+        '''
+        target_rs = self._get_registered_schema()
+        target_rs.schema_str = schema_str
+        if not target_rs.validate_schema_str():
+            raise Exception(u'Invalid schema.')
+        rs_d = self._get_for_sha256_id(target_rs.sha256_id)
+        if rs_d:
+            retrieved_rs = self._get_registered_schema()
+            retrieved_rs.update_from_dict(rs_d)
+            return retrieved_rs
+        return None
+
+    def get_all_topics(self):
+        '''Return a sorted list of all the topics currently associated with
+        schemas in the repository.
+        '''
+        topic_list = []
+        for topic_key in self.redis.keys('topic.*'):
+            topic_list.append(topic_key[6:])
+        return sorted(topic_list)
+
+    def get_all_topics_and_cur_versions(self):
+        '''Return a dict with known topics as keys and current versions for
+        those topics as vals.
+        '''
+        tv_list = self.lua_getcur_versions()
+        cur_ver_dict = self._hgetall_seq_2_dict(tv_list)
+        rdict = {}
+        for key, val in cur_ver_dict:
+            rdict[key[6:]] = val
+        return rdict
+
+    def get_versions_for_id_and_topic(self, id_base64, topic):
+        '''Return a list of all topic versions for a schema with a given
+        SHA256-based id.  This lets you identify non-sequential re-registration
+        of the same schema.  This does not come up much, so we don't bother
+        with a LUA script.
         '''
         key = u'topic.%s' % topic
         vlist = []
@@ -257,13 +323,15 @@ class RedisSchemaRepository(object):
                 vlist.append(version)
         return vlist
 
+
 from tasr.registered_schema import RegisteredAvroSchema
+
 
 class AvroSchemaRepository(RedisSchemaRepository):
     '''This is an Avro-specific schema repository class.
     '''
     def __init__(self, host='localhost', port=6379, db=0):
-        super(AvroSchemaRepository, self).__init__()
+        super(AvroSchemaRepository, self).__init__(host=host, port=port, db=db)
 
     def _get_registered_schema(self):
         '''Returns a RegisteredAvroSchema object, overriding the parent.

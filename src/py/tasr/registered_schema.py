@@ -14,14 +14,15 @@ import avro.schema
 MD5_BYTES = 16
 SHA256_BYTES = 32
 
+
 class RegisteredSchema(object):
-    '''The RegisteredSchema represents the data we have about how a given schema
-    string is currently registered for known topics.  This object only holds the
-    most recent topic-version intersections, so for the (unusual but allowed)
-    case where a schema has been registered more than once for the same topic,
-    only the most recent version will be included.  However, _all_ topics for
-    which the schema string has been registered are included, and must each
-    indicate their most recent versions.
+    '''The RegisteredSchema represents the data we have about how a given
+    schema string is currently registered for known topics.  This object only
+    holds the most recent topic-version intersections, so for the (unusual but
+    allowed) case where a schema has been registered more than once for the
+    same topic, only the most recent version will be included.  However, _all_
+    topics for which the schema string has been registered are included, and
+    must each indicate their most recent versions.
 
     The canonical schema string is a version with whitespace and other things
     that will not affect the parsing of the schema normalized.
@@ -184,7 +185,7 @@ class RegisteredSchema(object):
         '''A convenience method to get the current version for a topic
         associated with the schema.
         '''
-        if self.tv_dict.has_key(topic):
+        if topic in self.tv_dict:
             return self.tv_dict[topic]
         return None
 
@@ -192,7 +193,7 @@ class RegisteredSchema(object):
         '''A convenience method to get the timestamp for when a topic was
         associated with the schema.
         '''
-        if self.ts_dict.has_key(topic):
+        if topic in self.ts_dict:
             return self.ts_dict[topic]
         return None
 
@@ -219,6 +220,7 @@ class RegisteredSchema(object):
             return True
         return False
 
+
 class RegisteredAvroSchema(RegisteredSchema):
     '''Adds an Avro schema validation function.
     '''
@@ -232,5 +234,5 @@ class RegisteredAvroSchema(RegisteredSchema):
         # a parse exception should bubble up, so don't catch it here
         avro.schema.parse(self.canonical_schema_str)
 
-        # add anything in addition to checking that the str parses as valid Avro
+        # add additional checks?
         return True
