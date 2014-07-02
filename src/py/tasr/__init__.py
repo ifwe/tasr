@@ -192,7 +192,7 @@ class RedisSchemaRepository(object):
         new_rs = self._get_registered_schema()
         new_rs.schema_str = schema_str
         if not new_rs.validate_schema_str():
-            raise Exception(u'Cannot register invalid schema.')
+            raise ValueError(u'Cannot register invalid schema.')
 
         # the key values are what we use as Redis keys
         sha256_key = u'id.%s' % new_rs.sha256_id
@@ -277,10 +277,11 @@ class RedisSchemaRepository(object):
         RegisteredSchema class' canonicalization and the SHA256 fingerprint
         figured for the canonical schema string.
         '''
+        # load the passed schema string into a RegisteredSchema object
         target_rs = self._get_registered_schema()
         target_rs.schema_str = schema_str
         if not target_rs.validate_schema_str():
-            raise Exception(u'Invalid schema.')
+            raise ValueError(u'Cannot register invalid schema.')
         rs_d = self._get_for_sha256_id(target_rs.sha256_id)
         if rs_d:
             retrieved_rs = self._get_registered_schema()
@@ -304,7 +305,7 @@ class RedisSchemaRepository(object):
         tv_list = self.lua_getcur_versions()
         cur_ver_dict = self._hgetall_seq_2_dict(tv_list)
         rdict = {}
-        for key, val in cur_ver_dict:
+        for key, val in cur_ver_dict.iteritems():
             rdict[key[6:]] = val
         return rdict
 

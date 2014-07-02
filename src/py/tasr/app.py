@@ -39,6 +39,7 @@ a "-D" will daemonize the process.
 '''
 
 import sys
+import StringIO
 from tasr import AvroSchemaRepository
 from bottle import Bottle, request, abort, response
 from avro.schema import SchemaParseException
@@ -173,12 +174,20 @@ def get_for_schema(topic_name=None):
     if schema_str == None or schema_str == '':
         abort(400, 'No schema posted with the request.  Try again.')
 
-    reg_schema = ASR.get_for_schema_str(schema_str)
-    if reg_schema and (topic_name == None or topic_name in reg_schema.topics):
-        _set_x_schema_headers(response, reg_schema)
-        return reg_schema.canonical_schema_str
-    # return nothing if the passed schema string has not been registered
-    abort(404, 'This schema not registered for %s' % topic_name)
+    try:
+        reg_schema = ASR.get_for_schema_str(schema_str)
+        if reg_schema and topic_name == None:
+            # this is the TASR native API call
+            _set_x_schema_headers(response, reg_schema)
+            return reg_schema.canonical_schema_str
+
+        elif reg_schema and topic_name in reg_schema.topics:
+            # this is the S+V API call
+            _set_x_schema_headers(response, reg_schema)
+            return reg_schema.canonical_schema_str
+        abort(404, 'This schema not registered for %s' % topic_name)
+    except SchemaParseException:
+        abort(400, 'Invalid schema.  Failed to consider.')
 
 
 @TASR_APP.get('/tasr/topic')
@@ -190,7 +199,15 @@ def get_all_topics():
     entries, which in this case specify the most recent version for each of the
     topics.
     '''
-
+    buff = StringIO.StringIO()
+    tv_dict = ASR.get_all_topics_and_cur_versions()
+    for topic, val in tv_dict.iteritems():
+        response.add_header('X-Schema-Topic-Version',
+                            '%s=%s' % (topic, val))
+        buff.write('%s\n' % topic)
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
 
 import getopt
 

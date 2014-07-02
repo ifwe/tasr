@@ -4,10 +4,10 @@ Created on May 7, 2014
 @author: cmills
 '''
 import sys, os
-test_dir = os.path.abspath(os.path.dirname(__file__))
-src_dir = os.path.abspath(os.path.dirname('%s/../../src/py/tagged' % test_dir))
-sys.path.insert(0, os.path.join(test_dir, src_dir))
-fix_dir = os.path.abspath(os.path.dirname("%s/../fixtures/" % test_dir))
+TEST_DIR = os.path.abspath(os.path.dirname(__file__))
+SRC_DIR = os.path.abspath(os.path.dirname('%s/../../src/py/tagged' % TEST_DIR))
+sys.path.insert(0, os.path.join(TEST_DIR, SRC_DIR))
+FIX_DIR = os.path.abspath(os.path.dirname("%s/../fixtures/" % TEST_DIR))
 
 import unittest
 import tasr.app
@@ -22,7 +22,7 @@ class TestTASRClient(unittest.TestCase):
 
     def setUp(self):
         self.event_type = "gold"
-        self.avsc_file = "%s/schemas/%s.avsc" % (fix_dir, self.event_type)
+        self.avsc_file = "%s/schemas/%s.avsc" % (FIX_DIR, self.event_type)
         self.schema_str = open(self.avsc_file, "r").read()
         self.tasr = TestApp(tasr.app.TASR_APP)
         # client settings
