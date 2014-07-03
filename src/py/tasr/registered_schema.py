@@ -15,6 +15,64 @@ MD5_BYTES = 16
 SHA256_BYTES = 32
 
 
+class SchemaMetadata(object):
+    '''A structured place to hold schema-related metadata.  This is a helper
+    class for the RegisteredSchema class.  Note that this class does not hold
+    an actual schema, just metadata about a schema.  That means the SHA256 and
+    MD5 based IDs are snapshots, not calculated live.
+    '''
+    def __init__(self, meta_dict=None):
+        self.sha256_id = None
+        self.md5_id = None
+        self.tv_dict = dict()
+        self.ts_dict = dict()
+        if meta_dict:
+            self.update_from_dict(meta_dict)
+
+    def update_from_dict(self, meta_dict):
+        '''Set the metadata values from a dict.'''
+        if not meta_dict:
+            return
+        if 'sha256_id' in meta_dict:
+            self.sha256_id = meta_dict['sha256_id']
+        if 'md5_id' in meta_dict:
+            self.sha256_id = meta_dict['md5_id']
+        for key, val in meta_dict.iteritems():
+            if key.startswith('topic.'):
+                try:
+                    topic = key[6:]
+                    version = int(val)
+                    self.tv_dict[topic] = version
+                except ValueError:
+                    pass
+            if key.startswith('topic_ts.'):
+                try:
+                    topic = key[9:]
+                    timestamp = long(val)
+                    self.ts_dict[topic] = timestamp
+                except ValueError:
+                    pass
+
+    def as_dict(self):
+        '''Encapsulate the object values in a dict.'''
+        meta_dict = dict()
+        meta_dict['sha256_id'] = self.sha256_id
+        meta_dict['md5_id'] = self.md5_id
+        for key, value in self.tv_dict.iteritems():
+            topic_key = 'topic.%s' % key
+            meta_dict[topic_key] = value
+        for key, value in self.ts_dict.iteritems():
+            topic_key = 'topic_ts.%s' % key
+            meta_dict[topic_key] = value
+        return meta_dict
+
+    @property
+    def topics(self):
+        '''Access the topic list as a property.
+        '''
+        return self.tv_dict.keys()
+
+
 class RegisteredSchema(object):
     '''The RegisteredSchema represents the data we have about how a given
     schema string is currently registered for known topics.  This object only
@@ -36,47 +94,43 @@ class RegisteredSchema(object):
         self.ts_dict = dict()
 
     def update_from_dict(self, rs_dict):
-        '''Updates the non-derived fields in the object with those in the
-        passed in dict.
+        '''A dict containing a schema and topic-version and topic-timestamp
+        entries can be used to update the RS fields.  Note that even if the
+        dict contains 'sha256_id' and 'md5_id' fields, they will be ignored
+        as the RS only exposes those as live values calculated from the schema.
         '''
-        if not rs_dict:
-            return
-        # these are derivative values in this object
-        rs_dict.pop('sha256_id')
-        rs_dict.pop('md5_id')
+        if rs_dict:
+            self.schema_str = rs_dict.pop('schema', self.schema_str)
+            self.update_dicts_from_schema_metadata(SchemaMetadata(rs_dict))
 
-        self.schema_str = rs_dict.pop('schema', self.schema_str)
+    def update_dicts_from_schema_metadata(self, metadata):
+        '''Updates the topic-version and topic-timestamp fields in the RS
+        object based on tv_dict and ts_dict passed in a SchemaMetadata object.
+        '''
+        if metadata:
+            self.tv_dict.update(metadata.tv_dict)
+            self.ts_dict.update(metadata.ts_dict)
 
-        # the topic and version may not be the most recent intersection
-        # the tv_dict holds only the most recent topic/version intersections
-        # the ts_dict holds the timestamps for those t/v intersections
-        for k, val in rs_dict.iteritems():
-            if k.startswith('topic.'):
-                try:
-                    topic = k[6:]
-                    version = int(val)
-                    self.tv_dict[topic] = version
-                except ValueError:
-                    pass
-            if k.startswith('topic_ts.'):
-                try:
-                    topic = k[9:]
-                    timestamp = long(val)
-                    self.ts_dict[topic] = timestamp
-                except ValueError:
-                    pass
+    def as_schema_metadata(self):
+        '''Creates a new SchemaMetadata object that contains a snapshot of the
+        RS object's metadata (IDs, tv_dict and ts_dict).
+        '''
+        metadata = SchemaMetadata()
+        metadata.sha256_id = self.sha256_id
+        metadata.md5_id = self.md5_id
+        metadata.tv_dict = self.tv_dict.copy()
+        metadata.ts_dict = self.ts_dict.copy()
+        return metadata
 
     def as_dict(self):
-        '''Outputs the object as a dict.
-        '''
-        rsd = self.tv_dict.copy()
-        rsd.update(self.ts_dict)
-        # add the canonical version of the schema string
-        rsd['schema'] = self.canonical_schema_str
-        # add the ids -- using the 'id.' prefixes
-        rsd['sha256_id'] = 'id.%s' % self.sha256_id
-        rsd['md5_id'] = 'id.%s' % self.md5_id
-        return rsd
+        '''Outputs the object as a dict.'''
+        rs_dict = dict()
+        rs_dict.update(self.as_schema_metadata().as_dict())
+        rs_dict['schema'] = self.canonical_schema_str
+        # overwrite the SHA256 and MD5 IDs with ones derived from the schema
+        rs_dict['sha256_id'] = 'id.%s' % self.sha256_id
+        rs_dict['md5_id'] = 'id.%s' % self.md5_id
+        return rs_dict
 
     @property
     def canonical_schema_str(self):

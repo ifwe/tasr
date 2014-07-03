@@ -141,14 +141,14 @@ def get_for_topic_and_version(topic_name=None, version=None):
 
 
 @TASR_APP.get('/tasr/id/<base64_id:path>')  # Base64 IDs w/ slashes, so :path
-def get_for_id(base64_id=None):
+def get_for_id_str(base64_id=None):
     '''Retrieves the registered schema with the specified id.  Note there is no
     support for this in the standard Avro (1124-type) repo.  This is possible
     only with the multi-type ID.
     '''
     if base64_id == None or base64_id == '':
         abort(400, 'Refusing to look for schema for %s' % base64_id)
-    reg_schema = ASR.get_for_id(base64_id)
+    reg_schema = ASR.get_for_id_str(base64_id)
     if reg_schema:
         _set_x_schema_headers(response, reg_schema)
         return reg_schema.canonical_schema_str
@@ -158,7 +158,7 @@ def get_for_id(base64_id=None):
 
 @TASR_APP.post('/tasr/schema')
 @TASR_APP.post('/tasr/subject/<topic_name>/schema')
-def get_for_schema(topic_name=None):
+def get_for_schema_str(topic_name=None):
     '''Retrieves the registered schema for the schema string as passed. The s+v
     API specifies a topic (a.k.a -- a subject), which is mostly superfluous for
     our implementation.  This method works with or without a topic specified,

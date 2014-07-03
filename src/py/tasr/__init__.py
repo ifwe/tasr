@@ -253,7 +253,7 @@ class RedisSchemaRepository(object):
             retrieved_rs.update_from_dict(rs_d)
             return retrieved_rs
 
-    def get_for_id(self, id_base64):
+    def get_for_id_str(self, id_base64):
         '''Gets the registered schema with a given md5 or sha256 id.  For the
         md5 id case, we use the registered LUA script.
         '''

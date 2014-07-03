@@ -16,6 +16,7 @@ from webtest import TestApp
 import tasr.app
 import StringIO
 
+
 def extract_hdict(hlist, prefix=None):
     hdict = dict()
     for h in hlist:

@@ -134,17 +134,17 @@ class TestTASR(unittest.TestCase):
         self.assertEqual(None, rs, 'expected None back for missing topic')
 
     def test_get_for_id(self):
-        '''get_for_id() - as expected'''
+        '''get_for_id_str() - as expected'''
         rs = self.asr.register(self.event_type, self.schema_str)
         rs.version = None
         rs.topic = None
-        self.assertEqual(rs, self.asr.get_for_id(rs.md5_id),
+        self.assertEqual(rs, self.asr.get_for_id_str(rs.md5_id),
                          u'MD5 ID retrieved unequal registered schema')
-        self.assertEqual(rs, self.asr.get_for_id(rs.sha256_id),
+        self.assertEqual(rs, self.asr.get_for_id_str(rs.sha256_id),
                          u'SHA256 ID retrieved unequal registered schema')
 
     def test_get_first_for_id(self):
-        '''get_for_id() - as expected, with non-sequential re-registration'''
+        '''get_for_id_str() - as expected, with non-sequential re-registration'''
         rs = self.asr.register(self.event_type, self.schema_str)
         # modify the namespace in the schema to ensure a non-whitespace change
         schema_str_2 = self.schema_str.replace('tagged.events',
@@ -153,9 +153,9 @@ class TestTASR(unittest.TestCase):
         self.assertNotEqual(rs, rs2, u'Modded schema unexpectedly equal')
 
         # now pull the first by id and assert equality to _rs
-        re_rs = self.asr.get_for_id(rs.md5_id)
+        re_rs = self.asr.get_for_id_str(rs.md5_id)
         self.assertEqual(rs, re_rs, u'MD5 ID retrieved unequal reg schema')
-        self.assertEqual(rs, self.asr.get_for_id(rs.sha256_id),
+        self.assertEqual(rs, self.asr.get_for_id_str(rs.sha256_id),
                          u'SHA256 ID retrieved unequal registered schema')
 
     def test_get_for_schema_str(self):
