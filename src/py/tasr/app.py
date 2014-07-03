@@ -48,7 +48,7 @@ from avro.schema import SchemaParseException
 # Note that the issue is usually that Redis isn't running or is inaccessible.
 ASR = None
 try:
-    ASR = AvroSchemaRepository()
+    ASR = AvroSchemaRepository(port=5379)
 except Exception as exc:
     print "Exception: %s" % exc
     sys.exit(2)
