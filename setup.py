@@ -1,9 +1,10 @@
+import os
 from setuptools import setup, find_packages
 from sys import version_info
 
 setup(
     name='tasr',
-    version="1",
+    version=os.environ.get('BUILD_NUMBER', '1'),
     description="Tagged Avro Schema Repository",
     package_dir = {'': 'src/py'},
     packages=find_packages('src/py'),
