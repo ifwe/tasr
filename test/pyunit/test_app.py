@@ -4,12 +4,7 @@ Created on Apr 8, 2014
 @author: cmills
 '''
 
-import sys
-import os
-TEST_DIR = os.path.abspath(os.path.dirname(__file__))
-SRC_DIR = os.path.abspath(os.path.dirname('%s/../../src/py/tagged' % TEST_DIR))
-sys.path.insert(0, os.path.join(TEST_DIR, SRC_DIR))
-FIX_DIR = os.path.abspath(os.path.dirname("%s/../fixtures/" % TEST_DIR))
+from tasr_test import TASRTestCase
 
 import unittest
 from webtest import TestApp
@@ -17,42 +12,26 @@ import tasr.app
 import StringIO
 
 
-def extract_hdict(hlist, prefix=None):
-    hdict = dict()
-    for h in hlist:
-        (k, v) = h
-        k = k.upper()
-        if prefix:
-            prefix = prefix.upper()
-            if k[0:len(prefix)] == prefix:
-                if not k in hdict:
-                    hdict[k] = []
-                hdict[k].append(v)
-        else:
-            if not k in hdict:
-                hdict[k] = []
-            hdict[k].append(v)
-    return hdict
-
-
-class TestTASRAppNativeAPI(unittest.TestCase):
+class TestTASRAppNativeAPI(TASRTestCase):
     '''These tests check that the TASR native REST API (including the get by ID
     calls) are working as expected.  This does not check the S+V API calls.
     '''
 
     def setUp(self):
         self.event_type = "gold"
-        self.avsc_file = "%s/schemas/%s.avsc" % (FIX_DIR, self.event_type)
-        self.schema_str = open(self.avsc_file, "r").read()
+        fix_rel_path = "schemas/%s.avsc" % (self.event_type)
+        self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
+        self.schema_str = self.avsc_file.read()
         self.tasr_app = TestApp(tasr.app.TASR_APP)
         self.url_prefix = 'http://localhost:8080/tasr'
         self.topic_url = '%s/topic/%s' % (self.url_prefix, self.event_type)
         self.content_type = 'application/json; charset=utf8'
+        # clear out all the keys before beginning -- careful!
+        tasr.app.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        for k in tasr.app.ASR.redis.keys():
-            tasr.app.ASR.redis.delete(k)
+        tasr.app.ASR.redis.flushdb()
 
     # registration
     def test_register_schema(self):
@@ -67,7 +46,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
                               'X-SCHEMA-TOPIC-VERSION-TIMESTAMP',
                               'X-SCHEMA-MD5-ID']
 
-        hdict = extract_hdict(resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(resp.headerlist, 'X-SCHEMA-')
         for xk in expected_x_headers:
             self.assertIn(xk, hdict.keys(), u'%s header missing.' % xk)
 
@@ -111,7 +90,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         self.assertEqual(200, resp.status_code,
                          u'Non-200 status code: %s' % resp.status_code)
 
-        hdict = extract_hdict(resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(resp.headerlist, 'X-SCHEMA-')
         t0, v0 = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')
         self.assertNotEqual(None, v0, u'Invalid initial version: %s' % v0)
 
@@ -119,7 +98,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         resp1 = self.tasr_app.request(self.topic_url, method='PUT',
                                       content_type=self.content_type,
                                       body=self.schema_str)
-        hdict1 = extract_hdict(resp1.headerlist, 'X-SCHEMA-')
+        hdict1 = TASRTestCase.extract_hdict(resp1.headerlist, 'X-SCHEMA-')
         t1, v1 = hdict1['X-SCHEMA-TOPIC-VERSION'][0].split('=')
         self.assertEqual(t0, t1, u'Re-registration produced a diff topic.')
         self.assertEqual(v0, v1, u'Re-registration produced a diff version.')
@@ -137,7 +116,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
                                           content_type=self.content_type,
                                           body=self.schema_str)
         tv_dict = dict()
-        hdict = extract_hdict(put_resp2.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(put_resp2.headerlist, 'X-SCHEMA-')
         for tv in hdict['X-SCHEMA-TOPIC-VERSION']:
             t, v = tv.split('=')
             tv_dict[t] = int(v)
@@ -151,7 +130,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
                               content_type=self.content_type,
                               body=self.schema_str)
         get_resp = self.tasr_app.request(self.topic_url, method='GET')
-        hdict = extract_hdict(get_resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(get_resp.headerlist, 'X-SCHEMA-')
         t, v = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')
         self.assertEqual(200, get_resp.status_code,
                          u'Non-200 status code: %s' % get_resp.status_code)
@@ -188,7 +167,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         put_resp = self.tasr_app.request(self.topic_url, method='PUT',
                                          content_type=self.content_type,
                                          body=self.schema_str)
-        hdict = extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
         cur_ver = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')[1]
         url = "%s/%s" % (self.topic_url, (int(cur_ver) + 1))
         get_resp = self.tasr_app.request(url, method='GET', expect_errors=True)
@@ -212,7 +191,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         put_resp3 = self.tasr_app.request(self.topic_url, method='PUT',
                                           content_type=self.content_type,
                                           body=self.schema_str)
-        hdict = extract_hdict(put_resp3.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(put_resp3.headerlist, 'X-SCHEMA-')
         v = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')[1]
         self.assertEqual(3, int(v), u'Expected third PUT to return version 3.')
 
@@ -223,7 +202,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
                          u'Non-200 status code: %s' % get_resp.status_code)
         self.assertEqual(self.schema_str, get_resp.body,
                          u'Unexpected body: %s' % get_resp.body)
-        hdict = extract_hdict(get_resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(get_resp.headerlist, 'X-SCHEMA-')
         v = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')[1]
         self.assertEqual(1, int(v), u'Expected GET to return version of 1.')
 
@@ -232,7 +211,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         put_resp = self.tasr_app.request(self.topic_url, method='PUT',
                                          content_type=self.content_type,
                                          body=self.schema_str)
-        hdict = extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
         id_str = hdict['X-SCHEMA-MD5-ID'][0]
         url = "%s/id/%s" % (self.url_prefix, id_str)
         get_resp = self.tasr_app.request(url, method='GET')
@@ -246,7 +225,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         put_resp = self.tasr_app.request(self.topic_url, method='PUT',
                                          content_type=self.content_type,
                                          body=self.schema_str)
-        hdict = extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
         id_str = hdict['X-SCHEMA-SHA256-ID'][0]
         url = "%s/id/%s" % (self.url_prefix, id_str)
         get_resp = self.tasr_app.request(url, method='GET')
@@ -260,15 +239,15 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         put_resp = self.tasr_app.request(self.topic_url, method='PUT',
                                          content_type=self.content_type,
                                          body=self.schema_str)
-        put_hdict = extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
+        put_hd = TASRTestCase.extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
         url = "%s/schema" % (self.url_prefix)
         post_resp = self.tasr_app.request(url, method='POST',
                                           content_type=self.content_type,
                                           body=self.schema_str)
-        post_hdict = extract_hdict(post_resp.headerlist, 'X-SCHEMA-')
+        post_hd = TASRTestCase.extract_hdict(post_resp.headerlist, 'X-SCHEMA-')
         self.assertEqual(200, post_resp.status_code,
                          u'Non-200 status code: %s' % post_resp.status_code)
-        self.assertDictEqual(put_hdict, post_hdict, 'Headers unequal.')
+        self.assertDictEqual(put_hd, post_hd, 'Headers unequal.')
         self.assertEqual(self.schema_str, post_resp.body,
                          u'Unexpected body: %s' % post_resp.body)
 
@@ -332,7 +311,7 @@ class TestTASRAppNativeAPI(unittest.TestCase):
         # now get all with versions and check the headers
         url = "%s/topic" % (self.url_prefix)
         resp = self.tasr_app.request(url, method='GET')
-        hdict = extract_hdict(resp.headerlist, 'X-SCHEMA-')
+        hdict = TASRTestCase.extract_hdict(resp.headerlist, 'X-SCHEMA-')
         self.assertEqual(200, resp.status_code,
                          u'Non-200 status code: %s' % resp.status_code)
         tv_dict = {}

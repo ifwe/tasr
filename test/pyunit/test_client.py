@@ -4,12 +4,7 @@ Created on May 7, 2014
 @author: cmills
 '''
 
-import sys
-import os
-TEST_DIR = os.path.abspath(os.path.dirname(__file__))
-SRC_DIR = os.path.abspath(os.path.dirname('%s/../../src/py/tagged' % TEST_DIR))
-sys.path.insert(0, os.path.join(TEST_DIR, SRC_DIR))
-FIX_DIR = os.path.abspath(os.path.dirname("%s/../fixtures/" % TEST_DIR))
+from tasr_test import TASRTestCase
 
 import unittest
 import tasr.app
@@ -22,21 +17,23 @@ import httmock
 from webtest import TestApp, TestRequest
 
 
-class TestTASRClient(unittest.TestCase):
+class TestTASRClient(TASRTestCase):
 
     def setUp(self):
         self.event_type = "gold"
-        self.avsc_file = "%s/schemas/%s.avsc" % (FIX_DIR, self.event_type)
-        self.schema_str = open(self.avsc_file, "r").read()
+        fix_rel_path = "schemas/%s.avsc" % (self.event_type)
+        self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
+        self.schema_str = self.avsc_file.read()
         self.tasr = TestApp(tasr.app.TASR_APP)
         # client settings
         self.host = 'localhost'  # should match netloc below
         self.port = 8080         # should match netloc below
+        # clear out all the keys before beginning -- careful!
+        tasr.app.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        for k in tasr.app.ASR.redis.keys():
-            tasr.app.ASR.redis.delete(k)
+        tasr.app.ASR.redis.flushdb()
 
     @httmock.urlmatch(netloc=r'localhost:8080')
     def route_to_testapp(self, url, requests_req):

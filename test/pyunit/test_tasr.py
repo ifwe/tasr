@@ -4,12 +4,7 @@ Created on Apr 8, 2014
 @author: cmills
 '''
 
-import sys
-import os
-TEST_DIR = os.path.abspath(os.path.dirname(__file__))
-SRC_DIR = os.path.abspath(os.path.dirname('%s/../../src/py/tagged' % TEST_DIR))
-sys.path.insert(0, os.path.join(TEST_DIR, SRC_DIR))
-FIX_DIR = os.path.abspath(os.path.dirname("%s/../fixtures/" % TEST_DIR))
+from tasr_test import TASRTestCase
 
 import unittest
 import avro.schema
@@ -18,31 +13,34 @@ from tasr import AvroSchemaRepository
 
 try:
     import redis
-    R_TEST = redis.StrictRedis(host='localhost', port=6379, db=0)
+    # note we use port 5379 (instead of 6379) in prod, so we test against that
+    R_TEST = redis.StrictRedis(host='localhost', port=5379, db=0)
     R_TEST.keys('no_match_pattern')  # should throw exception if no redis
     HASR_LOCAL_REDIS = True
 except ImportError:
     HASR_LOCAL_REDIS = False
 
 
-class TestTASR(unittest.TestCase):
+class TestTASR(TASRTestCase):
 
     def setUp(self):
         self.event_type = "gold"
-        self.avsc_file = "%s/schemas/%s.avsc" % (FIX_DIR, self.event_type)
-        self.schema_str = open(self.avsc_file, "r").read()
+        fix_rel_path = "schemas/%s.avsc" % (self.event_type)
+        self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
+        self.schema_str = self.avsc_file.read()
         self.schema_version = 0
         self.asr = None
         if HASR_LOCAL_REDIS:
-            self.asr = AvroSchemaRepository()
+            self.asr = AvroSchemaRepository(host='localhost', port=5379)
+            # clear out all the keys before beginning -- careful!
+            self.asr.redis.flushdb()
         else:
             self.fail(u'Redis not available on localhost:6379')
 
     def tearDown(self):
         if HASR_LOCAL_REDIS:
             # clear out any added data
-            for k in self.asr.redis.keys():
-                self.asr.redis.delete(k)
+            self.asr.redis.flushdb()
 
     # registration tests
     def test_register_schema(self):
@@ -144,7 +142,7 @@ class TestTASR(unittest.TestCase):
                          u'SHA256 ID retrieved unequal registered schema')
 
     def test_get_first_for_id(self):
-        '''get_for_id_str() - as expected, with non-sequential re-registration'''
+        '''get_for_id_str() - with non-sequential re-registration'''
         rs = self.asr.register(self.event_type, self.schema_str)
         # modify the namespace in the schema to ensure a non-whitespace change
         schema_str_2 = self.schema_str.replace('tagged.events',
@@ -202,13 +200,16 @@ class TestTASR(unittest.TestCase):
         '''get_versions_for_id_and_topic() - as expected'''
         rs = self.asr.register(self.event_type, self.schema_str)
         # modify the namespace in the schema to ensure a non-whitespace change
-        schema_str_2 = self.schema_str.replace('tagged.events', 'tagged.events.alt', 1)
+        schema_str_2 = self.schema_str.replace('tagged.events',
+                                               'tagged.events.alt', 1)
         self.asr.register(self.event_type, schema_str_2)
         # now re-register the original schema, which should become version 3
         rs3 = self.asr.register(self.event_type, self.schema_str)
-        self.assertEqual(rs.sha256_id, rs3.sha256_id, u'Unequal SHA256 IDs on re-reg!')
+        self.assertEqual(rs.sha256_id, rs3.sha256_id,
+                         u'Unequal SHA256 IDs on re-reg!')
         self.assertNotEqual(rs, rs3, u'Expected different versions for topic.')
-        vlist = self.asr.get_versions_for_id_and_topic(rs3.sha256_id, self.event_type)
+        vlist = self.asr.get_versions_for_id_and_topic(rs3.sha256_id,
+                                                       self.event_type)
         self.assertEqual(2, len(vlist), u'Expected two entry version list.')
         self.assertEqual(1, vlist[0], u'Expected first version to be 1.')
         self.assertEqual(3, vlist[1], u'Expected second version to be 3.')

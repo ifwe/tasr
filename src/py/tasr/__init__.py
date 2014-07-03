@@ -305,6 +305,8 @@ class RedisSchemaRepository(object):
         tv_list = self.lua_getcur_versions()
         cur_ver_dict = self._hgetall_seq_2_dict(tv_list)
         rdict = {}
+        if not cur_ver_dict:
+            return rdict
         for key, val in cur_ver_dict.iteritems():
             rdict[key[6:]] = val
         return rdict

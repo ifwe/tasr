@@ -185,7 +185,15 @@ def get_for_schema_str(topic_name=None):
             # this is the S+V API call
             _set_x_schema_headers(response, reg_schema)
             return reg_schema.canonical_schema_str
-        abort(404, 'This schema not registered for %s' % topic_name)
+
+        # We set the headers even for an unregistered schema so the calling
+        # client has a way to get the ID strings.  We also avoid calling the
+        # inherited abort() as it would discard the added ID headers.
+        unreg_schema = ASR._get_registered_schema()
+        unreg_schema.schema_str = schema_str
+        response.set_header('X-Schema-MD5-ID', unreg_schema.md5_id)
+        response.set_header('X-Schema-SHA256-ID', unreg_schema.sha256_id)
+        response.status = 404
     except SchemaParseException:
         abort(400, 'Invalid schema.  Failed to consider.')
 
