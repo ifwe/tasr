@@ -10,55 +10,20 @@ values for the host or port.
 '''
 
 import requests
-from tasr.registered_schema import RegisteredAvroSchema, SchemaMetadata
+from tasr.registered_schema import RegisteredAvroSchema
+from tasr.headers import SubjectHeaderBot, SchemaHeaderBot
 
 TASR_HOST = 'localhost'
 TASR_PORT = 8080
-TASR_TIMEOUT = 2  # seconds
+TIMEOUT = 2  # seconds
 
 
 class TASRError(Exception):
     '''Something went wrong with a TASR interaction'''
 
 
-def _headers_to_schema_metadata(resp):
-    '''Extract the X-SCHEMA-* headers from a TASR service response and put them
-    in a dict.  Note that the dict format matches the one expected for updates
-    by the RegisteredSchema class.
-    '''
-    metadata = SchemaMetadata()
-    if "X-SCHEMA-SHA256-ID" in resp.headers:
-        metadata.sha256_id = resp.headers["X-SCHEMA-SHA256-ID"]
-    if "X-SCHEMA-MD5-ID" in resp.headers:
-        metadata.md5_id = resp.headers["X-SCHEMA-MD5-ID"]
-    if "X-SCHEMA-TOPIC-VERSION" in resp.headers:
-        for tvx in resp.headers["X-SCHEMA-TOPIC-VERSION"].split(','):
-            (topic, ver) = tvx.split('=', 1)
-            ver = int(ver)
-            metadata.tv_dict[topic.strip()] = ver
-    if "X-SCHEMA-TOPIC-VERSION-TIMESTAMP" in resp.headers:
-        for tse in resp.headers["X-SCHEMA-TOPIC-VERSION-TIMESTAMP"].split(','):
-            (topic, timestamp) = tse.split('=', 1)
-            timestamp = long(timestamp)
-            metadata.ts_dict[topic.strip()] = timestamp
-    return metadata
-
-
-def _response_to_reg_schema(schema_str, resp):
-    '''Package the response data up in a RegisteredAvroSchema object.'''
-    ras = RegisteredAvroSchema()
-    ras.schema_str = schema_str
-
-    metadata = _headers_to_schema_metadata(resp)
-    if schema_str and not metadata.sha256_id == ras.sha256_id:
-        raise TASRError('Schema was modified in transit.')
-
-    ras.update_dicts_from_schema_metadata(metadata)
-    return ras
-
-
-def _rs_from_url(url, method='GET', data=None, headers=None,
-                 timeout=TASR_TIMEOUT, err_404='No such object.'):
+def reg_schema_from_url(url, method='GET', data=None, headers=None,
+                 timeout=TIMEOUT, err_404='No such object.'):
     '''A generic method to call a URL and transform the reply into a
     RegisteredSchema object.  Most of the API calls can use this skeleton.
     '''
@@ -86,60 +51,26 @@ def _rs_from_url(url, method='GET', data=None, headers=None,
             raise TASRError('Failed request to %s (status code: %s)' %
                             (url, resp.status_code))
         # OK - so construct the RS and return it
-        return _response_to_reg_schema(schema_str, resp)
+        ras = RegisteredAvroSchema()
+        ras.schema_str = schema_str
+        schema_meta = SchemaHeaderBot.extract_metadata(resp)
+        if schema_str and not schema_meta.sha256_id == ras.sha256_id:
+            raise TASRError('Schema was modified in transit.')
+        ras.update_dicts_from_schema_metadata(schema_meta)
+        return ras
     except Exception as exc:
         raise TASRError(exc)
 
 #############################################################################
-# Bare TASR API methods
+# TASR API methods
 #############################################################################
 
 
-def get_reg_schema_for_topic(topic, version=None, host=TASR_HOST,
-                             port=TASR_PORT, timeout=TASR_TIMEOUT):
-    '''Get a RegisteredAvroSchema back for a given topic (and version if
-    provided, otherwise what's most recent).
+def get_all_topics(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
+    ''' GET /tasr/topic
+    Retrieves available metadata for all the topics (i.e. -- groups) with
+    registered schemas.  A dict of <topic name>:<topic metadata> is returned.
     '''
-    url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic)
-    if version:
-        url = '%s/%s' % (url, version)
-    return _rs_from_url(url, timeout=timeout, err_404='No such version.')
-
-
-def get_reg_schema_for_id_str(id_str, host=TASR_HOST,
-                              port=TASR_PORT, timeout=TASR_TIMEOUT):
-    '''Get a RegisteredAvroSchema back for a given ID str.
-    '''
-    url = 'http://%s:%s/tasr/id/%s' % (host, port, id_str)
-    return _rs_from_url(url, timeout=timeout, err_404='No schema for id.')
-
-
-def get_reg_schema_for_schema_str(schema_str, host=TASR_HOST, port=TASR_PORT,
-                                  timeout=TASR_TIMEOUT):
-    '''Get a RegisteredAvroSchema back for a given schema string.
-    '''
-    url = 'http://%s:%s/tasr/schema' % (host, port)
-    headers = {'content-type': 'application/json; charset=utf8', }
-    return _rs_from_url(url, method='POST', data=schema_str, headers=headers,
-                        timeout=timeout, err_404='Schema not registered.')
-
-
-def register_schema_for_topic(schema_str, topic, host=TASR_HOST,
-                              port=TASR_PORT, timeout=TASR_TIMEOUT):
-    '''Register a schema string for a topic.  Returns a SchemaMetadata object
-    with the topic-version, topic-timestamp and ID metadata.
-    '''
-    url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic)
-    headers = {'content-type': 'application/json; charset=utf8', }
-    return _rs_from_url(url, method='PUT', data=schema_str,
-                        headers=headers, timeout=timeout)
-
-
-def get_current_topic_versions(host=TASR_HOST, port=TASR_PORT,
-                               timeout=TASR_TIMEOUT):
-    '''Gets all the topics with schemas currently registered along with the
-    most current version number.  This is returned as a dict with the topic
-    names as keys and the current schema version as the value.'''
     url = 'http://%s:%s/tasr/topic' % (host, port)
     resp = requests.get(url, timeout=timeout)
     if resp == None:
@@ -147,59 +78,103 @@ def get_current_topic_versions(host=TASR_HOST, port=TASR_PORT,
     if not 200 == resp.status_code:
         raise TASRError('Failed request to %s (status code: %s)' %
                         (url, resp.status_code))
-    metadata = _headers_to_schema_metadata(resp)
-    return metadata.tv_dict
+    topic_metas = SubjectHeaderBot.extract_metadata(resp)
+    return topic_metas
 
 
-#############################################################################
-# Bare S+V API methods
-#############################################################################
-
-
-def get_reg_schema_for_subject(subject, version=None, host=TASR_HOST,
-                               port=TASR_PORT, timeout=TASR_TIMEOUT):
-    '''Get a RegisteredAvroSchema back for a given subject (and version if
-    provided, otherwise what's most recent).
+def register_schema(topic_name, schema_str, host=TASR_HOST,
+                          port=TASR_PORT, timeout=TIMEOUT):
+    ''' PUT /tasr/topic/<topic name>
+    Register a schema string for a topic.  Returns a SchemaMetadata object
+    with the topic-version, topic-timestamp and ID metadata.
     '''
-    url = 'http://%s:%s/tasr/subject/%s' % (host, port, subject)
-    if version:
-        url = '%s/id/%s' % (url, version)
-    return _rs_from_url(url, timeout=timeout, err_404='No such version.')
-
-
-def get_reg_schema_for_subject_and_schema_str(subject, schema_str,
-                                              host=TASR_HOST, port=TASR_PORT,
-                                              timeout=TASR_TIMEOUT):
-    '''Get a RegisteredAvroSchema back for a given subject and schema string.
-    '''
-    url = 'http://%s:%s/tasr/subject/%s/schema' % (host, port, subject)
+    url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic_name)
     headers = {'content-type': 'application/json; charset=utf8', }
-    return _rs_from_url(url, method='POST', data=schema_str, headers=headers,
-                        timeout=timeout, err_404='Schema not registered.')
+    return reg_schema_from_url(url, method='PUT', data=schema_str,
+                               headers=headers, timeout=timeout)
 
 
-def register_schema_for_subject(schema_str, subject, host=TASR_HOST,
-                                port=TASR_PORT, timeout=TASR_TIMEOUT):
-    '''Register a schema string for a subject.
+def get_latest_schema(topic_name, host=TASR_HOST,
+                      port=TASR_PORT, timeout=TIMEOUT):
+    ''' GET /tasr/topic/<topic name>
+    Retrieve the latest schema registered for the given topic name.  Returns a
+    RegisteredSchema object back.
     '''
-    url = 'http://%s:%s/tasr/subject/%s/register' % (host, port, subject)
+    return get_schema_version(topic_name, None, host, port, timeout)
+
+
+def get_schema_version(topic_name, version, host=TASR_HOST,
+                       port=TASR_PORT, timeout=TIMEOUT):
+    ''' GET /tasr/topic/<topic name>/version/<version>
+    Retrieve a specific schema registered for the given topic name identified
+    by a version (a positive integer).  Returns a RegisteredSchema object.
+    '''
+    url = ('http://%s:%s/tasr/topic/%s/version/%s' %
+           (host, port, topic_name, version))
+    return reg_schema_from_url(url, timeout=timeout,
+                               err_404='No such version.')
+
+
+def get_schema_for_id_str(id_str, host=TASR_HOST,
+                          port=TASR_PORT, timeout=TIMEOUT):
+    ''' GET /tasr/id/<ID string>
+    Retrieves a schema that has been registered for at least one topic name as
+    identified by a hash-based ID string.  The ID string is a base64 encoded
+    byte sequence, starting with a 1-byte ID type and followed by fingerprint
+    bytes for the ID type.  For example, with an SHA256-based ID, a fingerprint
+    is 32 bytes in length, so there would be 33 ID bytes, which would produce
+    an ID string of length 44 once base64-encoded.  The MD5-based IDs are 17
+    bytes (1 + 16), producing ID strings of length 24.  A RegisteredSchema
+    object is returned.
+    '''
+    url = 'http://%s:%s/tasr/id/%s' % (host, port, id_str)
+    return reg_schema_from_url(url, timeout=timeout,
+                               err_404='No schema for id.')
+
+
+def get_schema_for_schema_str(schema_str, object_on_miss=False,
+                              host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
+    ''' POST /tasr/schema
+    In essence this is very similar to the get_schema_for_id_str, but with the
+    calculation of the ID string being moved to the server.  That is, the
+    client POSTs the schema JSON itself, the server canonicalizes it, then
+    calculates the SHA256-based ID string for what was sent, then looks for
+    a matching schema based on that ID string.  This allows clients that do not
+    know how to canonicalize or hash the schemas to find the metadata (is it
+    registered, what version does it have for a topic) with what they have.
+
+    A RegisteredSchema object is returned if the schema string POSTed has been
+    registered for one or more topics.
+
+    If the schema string POSTed has yet to be registered for a topic and the
+    object_on_miss flag is True, a RegisteredSchema calculated for the POSTed
+    schema string is returned (it will have no topic-versions as there are
+    none).  This provides an easy way for a client to get the ID strings to
+    use for subsequent requests.
+
+    If the object_on_miss flag is False (the default), then a request for a
+    previously unregistered schema will raise a TASRError.
+    '''
+    url = 'http://%s:%s/tasr/schema' % (host, port)
     headers = {'content-type': 'application/json; charset=utf8', }
-    return _rs_from_url(url, method='PUT', data=schema_str,
-                        headers=headers, timeout=timeout)
-
-
-def get_all_subjects(host=TASR_HOST, port=TASR_PORT, timeout=TASR_TIMEOUT):
-    '''Gets all the subjects (topics) with schemas currently registered.  They
-    are returned as a list.'''
-    url = 'http://%s:%s/tasr/subject' % (host, port)
-    resp = requests.get(url, timeout=timeout)
+    resp = requests.post(url, data=schema_str, headers=headers,
+                         timeout=timeout)
     if resp == None:
         raise TASRError('Timeout for request to %s' % url)
-    if not 200 == resp.status_code:
-        raise TASRError('Failed request to %s (status code: %s)' %
-                        (url, resp.status_code))
-    metadata = _headers_to_schema_metadata(resp)
-    return metadata.tv_dict.keys()
+    if 200 == resp.status_code:
+        # success -- return a normal reg schema
+        ras = RegisteredAvroSchema()
+        ras.schema_str = resp.context
+        schema_meta = SchemaHeaderBot.extract_metadata(resp)
+        ras.update_dicts_from_schema_metadata(schema_meta)
+        return ras
+    elif 404 == resp.status_code and object_on_miss:
+        ras = RegisteredAvroSchema()
+        ras.schema_str = schema_str
+        schema_meta = SchemaHeaderBot.extract_metadata(resp)
+        ras.update_dicts_from_schema_metadata(schema_meta)
+        return ras
+    raise TASRError('Schema not registered to any topics.')
 
 
 #############################################################################
@@ -210,54 +185,37 @@ def get_all_subjects(host=TASR_HOST, port=TASR_PORT, timeout=TASR_TIMEOUT):
 class TASRClient(object):
     '''An object means you only need to specify the host settings once.
     '''
-    def __init__(self, host=TASR_HOST, port=TASR_PORT, timeout=TASR_TIMEOUT):
+    def __init__(self, host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
         self.host = host
         self.port = port
         self.timeout = timeout
 
-    def register(self, schema_str, topic):
-        '''Register a schema'''
-        return self.register_for_topic(schema_str, topic)
+    # topic calls
+    def get_all_topics(self):
+        '''Returns a dict of <topic name>:<metadata> for all topics.'''
+        return get_all_topics(self.host, self.port, self.timeout)
 
-    def register_for_topic(self, schema_str, topic):
+    # schema calls
+    def register_schema(self, topic_name, schema_str):
         '''Register a schema for a topic'''
-        return register_schema_for_topic(schema_str, topic, self.host,
-                                         self.port, self.timeout)
+        return register_schema(topic_name, schema_str)
 
-    def register_for_subject(self, schema_str, subject):
-        '''Register a schema for a subject'''
-        return register_schema_for_subject(schema_str, subject, self.host,
-                                         self.port, self.timeout)
+    def get_latest_schema(self, topic_name):
+        '''Get the latest schema registered for a topic'''
+        return get_latest_schema(topic_name,
+                                 self.host, self.port, self.timeout)
 
-    def get_for_topic(self, topic, version=None):
-        '''Get a reg schema for the topic'''
-        return get_reg_schema_for_topic(topic, version, self.host,
-                                        self.port, self.timeout)
+    def get_schema_version(self, topic_name, version=None):
+        '''Get a schema by version for the topic'''
+        return get_schema_version(topic_name, version,
+                                  self.host, self.port, self.timeout)
 
-    def get_for_subject(self, subject, version=None):
-        '''Get a reg schema for the subject'''
-        return get_reg_schema_for_subject(subject, version, self.host,
-                                          self.port, self.timeout)
+    def get_schema_for_id_str(self, id_str):
+        '''Get a schema identified by an ID str.'''
+        return get_schema_for_id_str(id_str,
+                                     self.host, self.port, self.timeout)
 
-    def get_for_id_str(self, id_str):
-        '''Get a reg schema for a specified ID str.'''
-        return get_reg_schema_for_id_str(id_str, self.host, self.port,
-                                         self.timeout)
-
-    def get_for_schema_str(self, schema_str, subject=None):
-        '''Get a reg schema for a specified schema str (subject optional).'''
-        if subject:
-            func = get_reg_schema_for_subject_and_schema_str
-            return func(subject, schema_str, self.host,
-                        self.port, self.timeout)
-        else:
-            func = get_reg_schema_for_schema_str
-            return func(schema_str, self.host, self.port, self.timeout)
-
-    def get_current_topic_versions(self):
-        '''Returns a dict of <topic>:<current version number>'''
-        return get_current_topic_versions(self.host, self.port, self.timeout)
-
-    def get_all_subjects(self):
-        '''Returns a list of subjects (topics) with a schema registered.'''
-        return get_all_subjects(self.host, self.port, self.timeout)
+    def get_schema_for_schema_str(self, schema_str):
+        '''Get a schema object using a (non-canonical) schema string.'''
+        return get_schema_for_schema_str(schema_str,
+                                         self.host, self.port, self.timeout)

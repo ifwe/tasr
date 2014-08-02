@@ -5,6 +5,7 @@ Created on July 1, 2014
 '''
 
 from tasr_test import TASRTestCase
+from tasr.headers import SchemaHeaderBot, SubjectHeaderBot
 
 import unittest
 from webtest import TestApp
@@ -33,49 +34,120 @@ class TestTASRAppSVAPI(TASRTestCase):
         # this clears out redis after each test -- careful!
         tasr.app.ASR.redis.flushdb()
 
-    # registration
+    def abort_diff_status(self, resp, code):
+        self.assertEqual(code, resp.status_code,
+                         u'Non-%s status code: %s' % (code, resp.status_code))
+
+    def register_subject(self, subject_name):
+        return self.tasr_app.put(self.url_prefix, {'subject': subject_name})
+
+    def register_schema(self, subject_name, schema_str, expect_errors=False):
+        reg_url = '%s/%s/register' % (self.url_prefix, subject_name)
+        return self.tasr_app.request(reg_url, method='PUT',
+                                     content_type=self.content_type,
+                                     expect_errors=expect_errors,
+                                     body=schema_str)
+
+    # subject tests
+    def test_register_subject(self):
+        '''PUT /tasr/subject - registers the subject (not the schema)'''
+        resp = self.register_subject(self.event_type)
+        self.abort_diff_status(resp, 200)
+        metas = SubjectHeaderBot.extract_metadata(resp)
+        self.assertEqual(self.event_type, metas[self.event_type].name,
+                         'unexpected subject name')
+
+    def test_register_subject_empty_subject_string(self):
+        '''PUT /tasr/subject - empty subject name should return a 400'''
+        resp = self.tasr_app.put(self.url_prefix,
+                                 {'subject': ''},
+                                 expect_errors=True)
+        self.abort_diff_status(resp, 400)
+
+    def test_register_subject_no_body(self):
+        '''PUT /tasr/subject - missing body should return a 400'''
+        resp = self.tasr_app.request(self.url_prefix, method='PUT',
+                                     body=None,
+                                     expect_errors=True)
+        self.abort_diff_status(resp, 400)
+
+    def test_lookup_subject(self):
+        '''GET /tasr/subject/<subject> - lookup the subject by name'''
+        self.register_subject(self.event_type)
+        resp = self.tasr_app.request(self.subject_url, method='GET')
+        self.abort_diff_status(resp, 200)
+        metas = SubjectHeaderBot.extract_metadata(resp)
+        self.assertEqual(self.event_type, metas[self.event_type].name,
+                         'unexpected subject name')
+
+    def test_lookup_missing_subject(self):
+        '''GET /tasr/subject/<subject> - lookup the subject by name'''
+        missing_subject_name = 'bob'
+        url = '%s/%s' % (self.url_prefix, missing_subject_name)
+        resp = self.tasr_app.request(url, method='GET', expect_errors=True)
+        self.abort_diff_status(resp, 404)
+
+    def test_get_all_subjects(self):
+        '''GET /tasr/subject - gets _all_ current subjects, as expected'''
+        # reg two vers for target subject and one for an alt subject
+        self.register_subject(self.event_type)
+        alt_subject_name = 'bob'
+        self.register_subject(alt_subject_name)
+        # now get all and check the headers
+        resp = self.tasr_app.request(self.url_prefix, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+
+        self.assertIn(self.event_type, meta_dict.keys(), 'missing subject')
+        subj = meta_dict[self.event_type]
+        self.assertEqual(self.event_type, subj.name, 'bad subject name')
+
+        self.assertIn(alt_subject_name, meta_dict.keys(), 'missing subject')
+        alt_subj = meta_dict[alt_subject_name]
+        self.assertEqual(alt_subject_name, alt_subj.name, 'bad subject name')
+
+        # lastly check the body
+        buff = StringIO.StringIO(resp.body)
+        group_names = []
+        for topic_line in buff:
+            group_names.append(topic_line.strip())
+        buff.close()
+        self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
+                             'Expected group_names in body to match headers.')
+
+    # schema tests
+    def test_lookup(self):
+        '''GET  '''
+        # should be nothing there to start with
+        resp = self.tasr_app.request('%s/latest' % self.subject_url,
+                                     method='GET', expect_errors=True)
+        self.abort_diff_status(resp, 404)
+
+        # reg a schema so we'll have something to lookup
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+
+        # check that lookup gets the schema
+        resp = self.tasr_app.get('%s/latest' % self.subject_url)
+        self.abort_diff_status(resp, 200)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(1, meta.group_version(self.event_type), 'bad ver')
+
     def test_register_schema(self):
         '''PUT /tasr/subject/<subject>/register - as expected'''
-        reg_url = '%s/register' % self.subject_url
-        resp = self.tasr_app.request(reg_url, method='PUT',
-                                     content_type=self.content_type,
-                                     body=self.schema_str)
-        self.assertEqual(200, resp.status_code,
-                         u'Non-200 status code: %s' % resp.status_code)
-        expected_x_headers = ['X-SCHEMA-TOPIC-VERSION',
-                              'X-SCHEMA-SHA256-ID',
-                              'X-SCHEMA-TOPIC-VERSION-TIMESTAMP',
-                              'X-SCHEMA-MD5-ID']
-
-        hdict = TASRTestCase.extract_hdict(resp.headerlist, 'X-SCHEMA-')
-        for xk in expected_x_headers:
-            self.assertIn(xk, hdict.keys(), u'%s header missing.' % xk)
-
-        for tv in hdict['X-SCHEMA-TOPIC-VERSION']:
-            t = tv.split('=')[0]
-            self.assertEqual(self.event_type, t, u'Unexpected topic.')
-
-        for ts in hdict['X-SCHEMA-TOPIC-VERSION-TIMESTAMP']:
-            t = ts.split('=')[0]
-            self.assertEqual(self.event_type, t, u'Unexpected topic.')
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
 
     def test_reg_fail_on_empty_schema(self):
         '''PUT /tasr/subject/<subject>/register - empty schema'''
-        reg_url = '%s/register' % self.subject_url
-        resp = self.tasr_app.request(reg_url, method='PUT',
-                                     content_type=self.content_type,
-                                     expect_errors=True,
-                                     body=None)
-        self.assertEqual(400, resp.status_int, u'Expected a 400 status code.')
+        resp = self.register_schema(self.event_type, None, True)
+        self.abort_diff_status(resp, 400)
 
     def test_reg_fail_on_invalid_schema(self):
         '''PUT /tasr/subject/<subject>/register - bad schema'''
-        reg_url = '%s/register' % self.subject_url
-        resp = self.tasr_app.request(reg_url, method='PUT',
-                                     content_type=self.content_type,
-                                     expect_errors=True,
-                                     body="%s }" % self.schema_str)
-        self.assertEqual(400, resp.status_int, u'Expected a 400 status code.')
+        bad_schema_str = "%s }" % self.schema_str
+        resp = self.register_schema(self.event_type, bad_schema_str, True)
+        self.abort_diff_status(resp, 400)
 
     def test_reg_fail_on_bad_content_type(self):
         '''PUT /tasr/subject/<subject>/register - bad content type'''
@@ -84,238 +156,167 @@ class TestTASRAppSVAPI(TASRTestCase):
                                      content_type='text/plain; charset=utf8',
                                      expect_errors=True,
                                      body=self.schema_str)
-        self.assertEqual(406, resp.status_int, u'Expected a 406 status code.')
+        self.abort_diff_status(resp, 406)
 
     def test_reg_and_rereg(self):
         '''PUT /tasr/subject/<subject>/register - multiple calls, one schema'''
-        reg_url = '%s/register' % self.subject_url
-        resp = self.tasr_app.request(reg_url, method='PUT',
-                                     content_type=self.content_type,
-                                     body=self.schema_str)
-        self.assertEqual(200, resp.status_code,
-                         u'Non-200 status code: %s' % resp.status_code)
-
-        hdict = TASRTestCase.extract_hdict(resp.headerlist, 'X-SCHEMA-')
-        t0, v0 = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')
-        self.assertNotEqual(None, v0, u'Invalid initial version: %s' % v0)
-
-        # on the re-registration, we should get the same version back
-        resp1 = self.tasr_app.request(reg_url, method='PUT',
-                                      content_type=self.content_type,
-                                      body=self.schema_str)
-        hdict1 = TASRTestCase.extract_hdict(resp1.headerlist, 'X-SCHEMA-')
-        t1, v1 = hdict1['X-SCHEMA-TOPIC-VERSION'][0].split('=')
-        self.assertEqual(t0, t1, u'Re-registration produced a diff subject.')
-        self.assertEqual(v0, v1, u'Re-registration produced a diff version.')
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(1, meta.group_version(self.event_type), 'bad ver')
+        resp1 = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp1, 200)
+        meta1 = SchemaHeaderBot.extract_metadata(resp1)
+        self.assertEqual(1, meta1.group_version(self.event_type), 'bad ver')
 
     def test_multi_subject_reg(self):
         '''PUT /tasr/subject/<subject>/register - multi subjects, one schema'''
-        reg_url = '%s/register' % self.subject_url
-        put_resp = self.tasr_app.request(reg_url, method='PUT',
-                                         content_type=self.content_type,
-                                         body=self.schema_str)
-        self.assertEqual(200, put_resp.status_code,
-                         u'Non-200 status code: %s' % put_resp.status_code)
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(1, meta.group_version(self.event_type), 'bad ver')
+
         alt_subject = 'bob'
-        alt_reg_url = '%s/%s/register' % (self.url_prefix, alt_subject)
-        put_resp2 = self.tasr_app.request(alt_reg_url, method='PUT',
-                                          content_type=self.content_type,
-                                          body=self.schema_str)
-        tv_dict = dict()
-        hdict = TASRTestCase.extract_hdict(put_resp2.headerlist, 'X-SCHEMA-')
-        for tv in hdict['X-SCHEMA-TOPIC-VERSION']:
-            t, v = tv.split('=')
-            tv_dict[t] = int(v)
-        self.assertEqual(1, tv_dict[self.event_type], u'Expected version 1.')
-        self.assertEqual(1, tv_dict[alt_subject], u'Expected version 1.')
+        resp2 = self.register_schema(alt_subject, self.schema_str)
+        self.abort_diff_status(resp2, 200)
+        meta2 = SchemaHeaderBot.extract_metadata(resp2)
+        self.assertEqual(1, meta2.group_version(alt_subject), 'bad ver')
+
+        # check that first association still holds
+        resp3 = self.tasr_app.get('%s/latest' % self.subject_url)
+        meta3 = SchemaHeaderBot.extract_metadata(resp3)
+        self.assertEqual(1, meta3.group_version(self.event_type), 'lost reg')
 
     # retrieval
     def test_get_latest(self):
         '''GET /tasr/subject/<subject>/latest - as expected'''
-        reg_url = '%s/register' % self.subject_url
-        self.tasr_app.request(reg_url, method='PUT',
-                              content_type=self.content_type,
-                              body=self.schema_str)
-        latest_url = '%s/latest' % self.subject_url
-        get_resp = self.tasr_app.request(latest_url, method='GET')
-        hdict = TASRTestCase.extract_hdict(get_resp.headerlist, 'X-SCHEMA-')
-        t, v = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')
-        self.assertEqual(200, get_resp.status_code,
-                         u'Non-200 status code: %s' % get_resp.status_code)
-        self.assertEqual(self.event_type, t, u'Unexpected topic.')
-        self.assertEqual('1', v, u'Unexpected version.')
-        self.assertEqual(self.schema_str, get_resp.body,
-                         u'Unexpected body: %s' % get_resp.body)
+        # reg a schema so we'll have something to lookup
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+        schema_str_2 = self.schema_str.replace('tagged.events',
+                                               'tagged.events.alt', 1)
+        resp = self.register_schema(self.event_type, schema_str_2)
+        self.abort_diff_status(resp, 200)
+
+        # check that lookup gets the _latest_ schema
+        resp = self.tasr_app.get('%s/latest' % self.subject_url)
+        self.abort_diff_status(resp, 200)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(2, meta.group_version(self.event_type), 'bad ver')
 
     def test_reg_50_and_get_by_version(self):
         '''GET /tasr/subject/<subject>/id/<version> - as expected'''
         schemas = []
         # add a bunch of versions for our subject
-        reg_url = '%s/register' % self.subject_url
         for v in range(1, 50):
             ver_schema_str = self.schema_str.replace('tagged.events',
                                                      'tagged.events.%s' % v, 1)
             schemas.append(ver_schema_str)
-            put_resp = self.tasr_app.request(reg_url, method='PUT',
-                                             content_type=self.content_type,
-                                             body=ver_schema_str)
-            self.assertEqual(200, put_resp.status_code,
-                             u'Non-200 status code: %s' % put_resp.status_code)
+            resp = self.register_schema(self.event_type, ver_schema_str)
+            self.abort_diff_status(resp, 200)
 
         # step through and request each version by version number
         for v in range(1, 50):
             get_url = '%s/id/%s' % (self.subject_url, v)
             get_resp = self.tasr_app.request(get_url, method='GET')
-            self.assertEqual(200, get_resp.status_code,
-                             u'Non-200 status code: %s' % get_resp.status_code)
+            self.abort_diff_status(get_resp, 200)
+            meta = SchemaHeaderBot.extract_metadata(get_resp)
+            self.assertEqual(v, meta.group_version(self.event_type), 'bad ver')
             self.assertEqual(schemas[v - 1], get_resp.body,
                              u'Unexpected body: %s' % get_resp.body)
 
     def test_get_for_subject_and_version_fail_on_bad_version(self):
         '''GET /tasr/subject/<subject>/id/<version> - fail on bad version'''
-        reg_url = '%s/register' % self.subject_url
-        put_resp = self.tasr_app.request(reg_url, method='PUT',
-                                         content_type=self.content_type,
-                                         body=self.schema_str)
-        hdict = TASRTestCase.extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
-        cur_ver = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')[1]
-        get_url = "%s/id/%s" % (self.subject_url, (int(cur_ver) + 1))
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        bad_version = meta.group_version(self.event_type) + 1
+        get_url = '%s/id/%s' % (self.subject_url, bad_version)
         get_resp = self.tasr_app.request(get_url, method='GET',
                                          expect_errors=True)
-        self.assertEqual(404, get_resp.status_int, u'Expected a 404 status.')
+        self.abort_diff_status(get_resp, 404)
 
     def test_get_for_stale_version(self):
         '''GET /tasr/subject/<subject>/id/<version> - 1 schema as 2 versions'''
-        reg_url = '%s/register' % self.subject_url
-        put_resp = self.tasr_app.request(reg_url, method='PUT',
-                                         content_type=self.content_type,
-                                         body=self.schema_str)
-        self.assertEqual(200, put_resp.status_code,
-                         u'Non-200 status code: %s' % put_resp.status_code)
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
         schema_str_2 = self.schema_str.replace('tagged.events',
                                                'tagged.events.alt', 1)
-        put_resp2 = self.tasr_app.request(reg_url, method='PUT',
-                                          content_type=self.content_type,
-                                          body=schema_str_2)
-        self.assertEqual(200, put_resp2.status_code,
-                         u'Non-200 status code: %s' % put_resp2.status_code)
-        put_resp3 = self.tasr_app.request(reg_url, method='PUT',
-                                          content_type=self.content_type,
-                                          body=self.schema_str)
-        hdict = TASRTestCase.extract_hdict(put_resp3.headerlist, 'X-SCHEMA-')
-        v = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')[1]
-        self.assertEqual(3, int(v), u'Expected third PUT to return version 3.')
-
-        # now get version 1 -- should be same schema, but diff ver in headers
-        get_url = "%s/id/%s" % (self.subject_url, 1)
-        get_resp = self.tasr_app.request(get_url, method='GET',
-                                         expect_errors=True)
-        self.assertEqual(200, get_resp.status_code,
-                         u'Non-200 status code: %s' % get_resp.status_code)
-        self.assertEqual(self.schema_str, get_resp.body,
-                         u'Unexpected body: %s' % get_resp.body)
-        hdict = TASRTestCase.extract_hdict(get_resp.headerlist, 'X-SCHEMA-')
-        v = hdict['X-SCHEMA-TOPIC-VERSION'][0].split('=')[1]
-        self.assertEqual(1, int(v), u'Expected GET to return version of 1.')
+        resp = self.register_schema(self.event_type, schema_str_2)
+        self.abort_diff_status(resp, 200)
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+        # get the latest version, which should be 3
+        resp = self.tasr_app.get('%s/latest' % self.subject_url)
+        self.abort_diff_status(resp, 200)
+        meta_v3 = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(3, meta_v3.group_version(self.event_type), 'bad ver')
+        # now get ver 1, which should have the same body as ver 3
+        get_url = '%s/id/%s' % (self.subject_url, 1)
+        get_resp = self.tasr_app.request(get_url, method='GET')
+        self.abort_diff_status(get_resp, 200)
+        meta_v1 = SchemaHeaderBot.extract_metadata(get_resp)
+        self.assertEqual(1, meta_v1.group_version(self.event_type), 'bad ver')
+        self.assertEqual(resp.body, get_resp.body, 'schema body mismatch')
 
     def test_get_for_schema(self):
         '''POST /tasr/subject/<subject>/schema - as expected'''
-        reg_url = '%s/register' % self.subject_url
-        put_resp = self.tasr_app.request(reg_url, method='PUT',
-                                         content_type=self.content_type,
-                                         body=self.schema_str)
-        put_hd = TASRTestCase.extract_hdict(put_resp.headerlist, 'X-SCHEMA-')
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
+        meta_1 = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(1, meta_1.group_version(self.event_type), 'bad ver')
+
+        schema_str_2 = self.schema_str.replace('tagged.events',
+                                               'tagged.events.alt', 1)
+        resp = self.register_schema(self.event_type, schema_str_2)
+        self.abort_diff_status(resp, 200)
+        # get by POSTed schema
         post_url = "%s/schema" % self.subject_url
         post_resp = self.tasr_app.request(post_url, method='POST',
                                           content_type=self.content_type,
                                           body=self.schema_str)
-        post_hd = TASRTestCase.extract_hdict(post_resp.headerlist, 'X-SCHEMA-')
-        self.assertEqual(200, post_resp.status_code,
-                         u'Non-200 status code: %s' % post_resp.status_code)
-        self.assertDictEqual(put_hd, post_hd, 'Headers unequal.')
+        meta_2 = SchemaHeaderBot.extract_metadata(post_resp)
+        self.assertEqual(1, meta_2.group_version(self.event_type), 'bad ver')
+        self.assertEqual(meta_1.sha256_id, meta_2.sha256_id, 'SHA mismatch')
+        self.assertEqual(meta_1.md5_id, meta_2.md5_id, 'MD5 mismatch')
         self.assertEqual(self.schema_str, post_resp.body,
                          u'Unexpected body: %s' % post_resp.body)
 
     def test_get_for_schema_fail_empty_schema_str(self):
         '''POST /tasr/subject/<subject>/schema - fail on empty schema string'''
-        reg_url = '%s/register' % self.subject_url
-        self.tasr_app.request(reg_url, method='PUT',
-                              content_type=self.content_type,
-                              body=self.schema_str)
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
         post_url = "%s/schema" % self.subject_url
         resp = self.tasr_app.request(post_url, method='POST',
                                      content_type=self.content_type,
                                      expect_errors=True,
                                      body=None)
-        self.assertEqual(400, resp.status_int,
-                         u'Unexpected status: %s' % resp.status_int)
+        self.abort_diff_status(resp, 400)
 
     def test_get_for_schema_fail_invalid_schema_str(self):
         '''POST /tasr/subject/<subject>/schema - fail on bad schema string'''
-        reg_url = '%s/register' % self.subject_url
-        self.tasr_app.request(reg_url, method='PUT',
-                              content_type=self.content_type,
-                              body=self.schema_str)
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 200)
         post_url = "%s/schema" % self.subject_url
         resp = self.tasr_app.request(post_url, method='POST',
                                      content_type=self.content_type,
                                      expect_errors=True,
                                      body="%s }" % self.schema_str)
-        self.assertEqual(400, resp.status_int,
-                         u'Unexpected status: %s' % resp.status_int)
+        self.abort_diff_status(resp, 400)
 
     def test_get_for_schema_fail_unregistered_schema_str(self):
         '''POST /tasr/subject/<subject>/schema - fail on new schema string'''
-        reg_url = '%s/register' % self.subject_url
-        self.tasr_app.request(reg_url, method='PUT',
-                              content_type=self.content_type,
-                              body=self.schema_str)
         post_url = "%s/schema" % self.subject_url
-        new_schema_str = self.schema_str.replace('tagged.events',
-                                                 'tagged.events.new', 1)
         resp = self.tasr_app.request(post_url, method='POST',
                                      content_type=self.content_type,
                                      expect_errors=True,
-                                     body=new_schema_str)
+                                     body=self.schema_str)
         self.assertEqual(404, resp.status_int,
                          u'Unexpected status: %s' % resp.status_int)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        self.assertTrue(meta.sha256_id, 'SHA missing')
+        self.assertTrue(meta.md5_id, 'MD5 missing')
 
-    def test_get_all_subjects(self):
-        '''GET /tasr/subject - as expected'''
-        # reg two vers for target subject and one for an alt subject
-        reg_url = '%s/register' % self.subject_url
-        self.tasr_app.request(reg_url, method='PUT',
-                              content_type=self.content_type,
-                              body=self.schema_str)
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
-        self.tasr_app.request(reg_url, method='PUT',
-                              content_type=self.content_type,
-                              body=schema_str_2)
-        alt_topic = 'bob'
-        alt_url = '%s/%s/register' % (self.url_prefix, alt_topic)
-        self.tasr_app.request(alt_url, method='PUT',
-                              content_type=self.content_type,
-                              body=self.schema_str)
-        # now get all with versions and check the headers
-        resp = self.tasr_app.request(self.url_prefix, method='GET')
-        hdict = TASRTestCase.extract_hdict(resp.headerlist, 'X-SCHEMA-')
-        self.assertEqual(200, resp.status_code,
-                         u'Non-200 status code: %s' % resp.status_code)
-        tv_dict = {}
-        for tv_hval in hdict['X-SCHEMA-TOPIC-VERSION']:
-            t, v = tv_hval.split('=')
-            tv_dict[t] = v
-        self.assertEqual('2', tv_dict[self.event_type], 'Expected 2 versions.')
-        self.assertEqual('1', tv_dict[alt_topic], 'Expected 1 version.')
-        # lastly check the body
-        buff = StringIO.StringIO(resp.body)
-        topics = []
-        for topic_line in buff:
-            topics.append(topic_line.strip())
-        buff.close()
-        self.assertListEqual(sorted(topics), sorted(tv_dict.keys()),
-                             'Expected topics in body to match headers.')
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRAppSVAPI)

@@ -23,25 +23,6 @@ class TASRTestCase(unittest.TestCase):
     fix_dir = FIX_DIR
 
     @staticmethod
-    def extract_hdict(hlist, prefix=None):
-        ''' '''
-        hdict = dict()
-        for h in hlist:
-            (k, v) = h
-            k = k.upper()
-            if prefix:
-                prefix = prefix.upper()
-                if k[0:len(prefix)] == prefix:
-                    if not k in hdict:
-                        hdict[k] = []
-                    hdict[k].append(v)
-            else:
-                if not k in hdict:
-                    hdict[k] = []
-                hdict[k].append(v)
-        return hdict
-
-    @staticmethod
     def get_fixture_file(rel_path, mode):
         path = '%s/%s' % (TASRTestCase.fix_dir, rel_path)
         return open(path, mode)

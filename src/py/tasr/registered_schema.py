@@ -24,7 +24,7 @@ class SchemaMetadata(object):
     def __init__(self, meta_dict=None):
         self.sha256_id = None
         self.md5_id = None
-        self.tv_dict = dict()
+        self.gv_dict = dict()
         self.ts_dict = dict()
         if meta_dict:
             self.update_from_dict(meta_dict)
@@ -38,18 +38,18 @@ class SchemaMetadata(object):
         if 'md5_id' in meta_dict:
             self.sha256_id = meta_dict['md5_id']
         for key, val in meta_dict.iteritems():
-            if key.startswith('topic.'):
+            if key.startswith('vid.'):
                 try:
-                    topic = key[6:]
+                    group_name = key[4:]
                     version = int(val)
-                    self.tv_dict[topic] = version
+                    self.gv_dict[group_name] = version
                 except ValueError:
                     pass
-            if key.startswith('topic_ts.'):
+            if key.startswith('vts.'):
                 try:
-                    topic = key[9:]
+                    group_name = key[4:]
                     timestamp = long(val)
-                    self.ts_dict[topic] = timestamp
+                    self.ts_dict[group_name] = timestamp
                 except ValueError:
                     pass
 
@@ -58,28 +58,36 @@ class SchemaMetadata(object):
         meta_dict = dict()
         meta_dict['sha256_id'] = self.sha256_id
         meta_dict['md5_id'] = self.md5_id
-        for key, value in self.tv_dict.iteritems():
-            topic_key = 'topic.%s' % key
+        for key, value in self.gv_dict.iteritems():
+            topic_key = 'vid.%s' % key
             meta_dict[topic_key] = value
         for key, value in self.ts_dict.iteritems():
-            topic_key = 'topic_ts.%s' % key
+            topic_key = 'vts.%s' % key
             meta_dict[topic_key] = value
         return meta_dict
 
+    def group_version(self, group_name):
+        if group_name in self.gv_dict.keys():
+            return int(self.gv_dict[group_name])
+
+    def group_timestamp(self, group_name):
+        if group_name in self.ts_dict.keys():
+            return long(self.ts_dict[group_name])
+
     @property
-    def topics(self):
-        '''Access the topic list as a property.
+    def group_names(self):
+        '''Access the group version list keys (group names) as a property.
         '''
-        return self.tv_dict.keys()
+        return self.gv_dict.keys()
 
 
 class RegisteredSchema(object):
     '''The RegisteredSchema represents the data we have about how a given
-    schema string is currently registered for known topics.  This object only
+    schema string is currently registered for known groups.  This object only
     holds the most recent topic-version intersections, so for the (unusual but
     allowed) case where a schema has been registered more than once for the
     same topic, only the most recent version will be included.  However, _all_
-    topics for which the schema string has been registered are included, and
+    groups for which the schema string has been registered are included, and
     must each indicate their most recent versions.
 
     The canonical schema string is a version with whitespace and other things
@@ -90,7 +98,7 @@ class RegisteredSchema(object):
     '''
     def __init__(self):
         self.schema_str = None
-        self.tv_dict = dict()
+        self.gv_dict = dict()
         self.ts_dict = dict()
 
     def update_from_dict(self, rs_dict):
@@ -105,20 +113,20 @@ class RegisteredSchema(object):
 
     def update_dicts_from_schema_metadata(self, metadata):
         '''Updates the topic-version and topic-timestamp fields in the RS
-        object based on tv_dict and ts_dict passed in a SchemaMetadata object.
+        object based on gv_dict and ts_dict passed in a SchemaMetadata object.
         '''
         if metadata:
-            self.tv_dict.update(metadata.tv_dict)
+            self.gv_dict.update(metadata.gv_dict)
             self.ts_dict.update(metadata.ts_dict)
 
     def as_schema_metadata(self):
         '''Creates a new SchemaMetadata object that contains a snapshot of the
-        RS object's metadata (IDs, tv_dict and ts_dict).
+        RS object's metadata (IDs, gv_dict and ts_dict).
         '''
         metadata = SchemaMetadata()
         metadata.sha256_id = self.sha256_id
         metadata.md5_id = self.md5_id
-        metadata.tv_dict = self.tv_dict.copy()
+        metadata.gv_dict = self.gv_dict.copy()
         metadata.ts_dict = self.ts_dict.copy()
         return metadata
 
@@ -213,10 +221,10 @@ class RegisteredSchema(object):
         return id_bytes
 
     @property
-    def topics(self):
+    def group_names(self):
         '''Access the topic list as a property.
         '''
-        return self.tv_dict.keys()
+        return self.gv_dict.keys()
 
     @property
     def is_valid(self):
@@ -235,20 +243,20 @@ class RegisteredSchema(object):
         '''
         return self.canonical_schema_str != None
 
-    def current_version(self, topic):
-        '''A convenience method to get the current version for a topic
+    def current_version(self, group_name):
+        '''A convenience method to get the current version for a group
         associated with the schema.
         '''
-        if topic in self.tv_dict:
-            return self.tv_dict[topic]
+        if group_name in self.gv_dict:
+            return self.gv_dict[group_name]
         return None
 
-    def current_version_timestamp(self, topic):
-        '''A convenience method to get the timestamp for when a topic was
+    def current_version_timestamp(self, group_name):
+        '''A convenience method to get the timestamp for when a group was
         associated with the schema.
         '''
-        if topic in self.ts_dict:
-            return self.ts_dict[topic]
+        if group_name in self.ts_dict:
+            return self.ts_dict[group_name]
         return None
 
     def __repr__(self):
@@ -256,7 +264,7 @@ class RegisteredSchema(object):
 
     def __str__(self):
         return u'%s[%s, %s]' % (self.__class__.__name__,
-                                self.sha256_id, self.tv_dict)
+                                self.sha256_id, self.gv_dict)
 
     def __eq__(self, other):
         '''Registered schemas are equal when the underlying canonical schema
@@ -269,8 +277,8 @@ class RegisteredSchema(object):
         if not self.sha256_id == other.sha256_id:
             return False
 
-        shared_set = set(self.tv_dict.items()) & set(other.tv_dict.items())
-        if len(self.tv_dict) == len(shared_set):
+        shared_set = set(self.gv_dict.items()) & set(other.gv_dict.items())
+        if len(self.gv_dict) == len(shared_set):
             return True
         return False
 
