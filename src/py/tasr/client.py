@@ -40,7 +40,8 @@ def reg_schema_from_url(url, method='GET', data=None, headers=None,
         elif method.upper() == 'PUT':
             resp = requests.put(url, data=data, headers=headers,
                                 timeout=timeout)
-            schema_str = data
+            #schema_str = data if not resp.content else resp.content
+            schema_str = resp.content
 
         # check for error cases
         if resp == None:

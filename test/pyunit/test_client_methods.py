@@ -7,6 +7,7 @@ Created on May 7, 2014
 from client_test import TestTASRAppClient
 
 import unittest
+import tasr.registered_schema
 import tasr.app
 import tasr.client
 import copy
@@ -36,10 +37,15 @@ class TestTASRClientMethods(TestTASRAppClient):
     ########################################################################
     def bare_register_schema_skeleton(self, schema_str):
         '''register_schema_for_topic() - skeleton test'''
+        # whitespace gets normalized, so do that locally to the submitted
+        # schema string so we have an accurate target for comparison
+        ras = tasr.registered_schema.RegisteredAvroSchema()
+        ras.schema_str = schema_str
+        canonical_schema_str = ras.canonical_schema_str
         with httmock.HTTMock(self.route_to_testapp):
             func = tasr.client.register_schema
             rs = func(self.event_type, schema_str, self.host, self.port)
-            self.assertEqual(schema_str, rs.schema_str,
+            self.assertEqual(canonical_schema_str, rs.schema_str,
                              'Schema string modified!')
             self.assertIn(self.event_type, rs.group_names,
                           'Topic not in registered schema object.')
@@ -135,9 +141,15 @@ class TestTASRClientMethods(TestTASRAppClient):
             ver_schema_str = copy.copy(self.schema_str)
             ver_schema_str = ver_schema_str.replace('tagged.events',
                                                     'tagged.events.%s' % v, 1)
-            schemas.append(ver_schema_str)
+            # whitespace gets normalized, so do that locally to the submitted
+            # schema string so we have an accurate target for comparison
+            ras = tasr.registered_schema.RegisteredAvroSchema()
+            ras.schema_str = ver_schema_str
+            canonical_ver_schema_str = ras.canonical_schema_str
+            schemas.append(canonical_ver_schema_str)
+            # reg with the non-canonicalized schema string
             rs = self.bare_register_schema_skeleton(ver_schema_str)
-            self.assertEqual(ver_schema_str, rs.schema_str,
+            self.assertEqual(canonical_ver_schema_str, rs.schema_str,
                              'Schema string modified!')
             self.assertIn(self.event_type, rs.group_names,
                           'Topic not in registered schema object.')

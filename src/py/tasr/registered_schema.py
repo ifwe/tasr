@@ -144,7 +144,10 @@ class RegisteredSchema(object):
     def canonical_schema_str(self):
         '''Not much normalization as of yet...
         '''
-        return self.schema_str
+        if not self.schema_str:
+            return None
+        elems = self.schema_str.split()
+        return ' '.join(elems)
 
     @property
     def md5_id(self):

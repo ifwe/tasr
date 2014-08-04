@@ -211,9 +211,11 @@ class TestTASRAppSVAPI(TASRTestCase):
         for v in range(1, 50):
             ver_schema_str = self.schema_str.replace('tagged.events',
                                                      'tagged.events.%s' % v, 1)
-            schemas.append(ver_schema_str)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 200)
+            # schema str with canonicalized whitespace returned
+            canonicalized_schema_str = resp.body
+            schemas.append(canonicalized_schema_str)
 
         # step through and request each version by version number
         for v in range(1, 50):
@@ -263,6 +265,8 @@ class TestTASRAppSVAPI(TASRTestCase):
         '''POST /tasr/subject/<subject>/schema - as expected'''
         resp = self.register_schema(self.event_type, self.schema_str)
         self.abort_diff_status(resp, 200)
+        # canonicalized schema string is passed back on registration
+        canonicalized_schema_str = resp.body
         meta_1 = SchemaHeaderBot.extract_metadata(resp)
         self.assertEqual(1, meta_1.group_version(self.event_type), 'bad ver')
 
@@ -279,7 +283,7 @@ class TestTASRAppSVAPI(TASRTestCase):
         self.assertEqual(1, meta_2.group_version(self.event_type), 'bad ver')
         self.assertEqual(meta_1.sha256_id, meta_2.sha256_id, 'SHA mismatch')
         self.assertEqual(meta_1.md5_id, meta_2.md5_id, 'MD5 mismatch')
-        self.assertEqual(self.schema_str, post_resp.body,
+        self.assertEqual(canonicalized_schema_str, post_resp.body,
                          u'Unexpected body: %s' % post_resp.body)
 
     def test_get_for_schema_fail_empty_schema_str(self):

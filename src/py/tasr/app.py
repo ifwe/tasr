@@ -187,7 +187,7 @@ def register_subject_schema(subject_name=None):
         tasr.headers.SchemaHeaderBot(response,
                                      reg_schema,
                                      subject_name).standard_headers()
-        return
+        return reg_schema.canonical_schema_str
     except SchemaParseException:
         abort(400, 'Invalid schema.  Failed to register_schema.')
 

@@ -111,13 +111,15 @@ class TestTASRAppNativeAPI(TASRTestCase):
     # retrieval
     def test_get_latest(self):
         '''GET /tasr/topic/<topic name> - as expected'''
-        self.register_schema(self.schema_str)
+        put_resp = self.register_schema(self.schema_str)
+        # the canonicalized form returned has normalized whitespace
+        canonicalized_schema_str = put_resp.body
         # now pull it back with a GET
         get_resp = self.tasr_app.request(self.topic_url, method='GET')
         self.abort_diff_status(get_resp, 200)
         smeta = SchemaHeaderBot.extract_metadata(get_resp)
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
-        self.assertEqual(self.schema_str, get_resp.body,
+        self.assertEqual(canonicalized_schema_str, get_resp.body,
                          u'Unexpected body: %s' % get_resp.body)
 
     def test_reg_50_and_get_by_version(self):
@@ -127,8 +129,10 @@ class TestTASRAppNativeAPI(TASRTestCase):
         for v in range(1, 50):
             ver_schema_str = self.schema_str.replace('tagged.events',
                                                      'tagged.events.%s' % v, 1)
-            schemas.append(ver_schema_str)
             put_resp = self.register_schema(ver_schema_str)
+            # the canonicalized form returned has normalized whitespace
+            canonicalized_schema_str = put_resp.body
+            schemas.append(canonicalized_schema_str)
             self.abort_diff_status(put_resp, 200)
 
         # step through and request each version by version number
@@ -152,6 +156,8 @@ class TestTASRAppNativeAPI(TASRTestCase):
     def test_get_for_stale_version(self):
         '''GET /tasr/topic/<topic name>/version/<version> - 1 schema, 2 vers'''
         put_resp = self.register_schema(self.schema_str)
+        # the canonicalized form returned has normalized whitespace
+        canonicalized_schema_str = put_resp.body
         self.abort_diff_status(put_resp, 200)
         schema_str_2 = self.schema_str.replace('tagged.events',
                                                'tagged.events.alt', 1)
@@ -165,7 +171,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
         url = "%s/version/%s" % (self.topic_url, 1)
         get_resp = self.tasr_app.request(url, method='GET', expect_errors=True)
         self.abort_diff_status(get_resp, 200)
-        self.assertEqual(self.schema_str, get_resp.body,
+        self.assertEqual(canonicalized_schema_str, get_resp.body,
                          u'Unexpected body: %s' % get_resp.body)
         smeta = SchemaHeaderBot.extract_metadata(get_resp)
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
@@ -173,29 +179,35 @@ class TestTASRAppNativeAPI(TASRTestCase):
     def test_get_for_md5_id(self):
         '''GET /tasr/id/<MD5 ID> - as expected'''
         put_resp = self.register_schema(self.schema_str)
+        # the canonicalized form returned has normalized whitespace
+        canonicalized_schema_str = put_resp.body
         smeta = SchemaHeaderBot.extract_metadata(put_resp)
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
         url = "%s/id/%s" % (self.url_prefix, smeta.md5_id)
         get_resp = self.tasr_app.request(url, method='GET')
         self.abort_diff_status(get_resp, 200)
-        self.assertEqual(self.schema_str, get_resp.body,
+        self.assertEqual(canonicalized_schema_str, get_resp.body,
                          u'Unexpected body: %s' % get_resp.body)
 
     def test_get_for_sha256_id(self):
         '''GET /tasr/id/<SHA256 ID> - as expected'''
         put_resp = self.register_schema(self.schema_str)
+        # the canonicalized form returned has normalized whitespace
+        canonicalized_schema_str = put_resp.body
         smeta = SchemaHeaderBot.extract_metadata(put_resp)
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
         url = "%s/id/%s" % (self.url_prefix, smeta.sha256_id)
         get_resp = self.tasr_app.request(url, method='GET')
         self.abort_diff_status(get_resp, 200)
-        self.assertEqual(self.schema_str, get_resp.body,
+        self.assertEqual(canonicalized_schema_str, get_resp.body,
                          u'Unexpected body: %s' % get_resp.body)
 
     def test_get_for_schema(self):
         '''POST /tasr/schema - as expected'''
         put_resp = self.register_schema(self.schema_str)
         self.abort_diff_status(put_resp, 200)
+        # the canonicalized form returned has normalized whitespace
+        canonicalized_schema_str = put_resp.body
         put_meta = SchemaHeaderBot.extract_metadata(put_resp)
         url = "%s/schema" % (self.url_prefix)
         post_resp = self.tasr_app.request(url, method='POST',
@@ -205,7 +217,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
         post_meta = SchemaHeaderBot.extract_metadata(post_resp)
         self.assertDictEqual(put_meta.as_dict(), post_meta.as_dict(),
                              'Headers unequal.')
-        self.assertEqual(self.schema_str, post_resp.body,
+        self.assertEqual(canonicalized_schema_str, post_resp.body,
                          u'Unexpected body: %s' % post_resp.body)
 
     def test_get_for_schema_fail_empty_schema_str(self):
