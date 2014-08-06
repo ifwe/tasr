@@ -51,21 +51,3 @@ class Group(object):
     def current_version(self):
         if self.current_schema:
             return self.current_schema.current_version(self.name)
-
-    def add_response_headers_for_current_version(self, response):
-        '''A convenience method to add response headers for subject responses.
-        '''
-        if not self.current_version:
-            return
-        response.add_header('X-Schema-Current-Version',
-                            '%s=%s' % (self.name, self.current_version))
-        timestamp = self.current_schema.current_version_timestamp(self.name)
-        if timestamp:
-            response.add_header('X-Schema-Current-Version-Timestamp',
-                                '%s=%s' % (self.name, timestamp))
-        response.set_header('X-Schema-Current-Version-MD5-ID',
-                            self.current_schema.md5_id)
-        response.set_header('X-Schema-Current-Version-SHA256-ID',
-                            self.current_schema.sha256_id)
-
-

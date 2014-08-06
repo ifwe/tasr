@@ -289,16 +289,15 @@ class RedisSchemaRepository(object):
             return self.lookup_subject(group_name)
 
     def lookup_subject(self, group_name):
-        '''Retrieve a Group object with the specified name or None.'''
+        '''Retrieve a Group object with the specified name or None.  The field
+        names starting with "group_" should set group level attributes.  The
+        field names starting with "default_" should set field defaults for the
+        group schemas.'''
         group_key = 'g.%s' % group_name
         group_dict = self.redis.hgetall(group_key)
         if group_dict:
             timestamp = group_dict.pop('group_ts')
-            validators_key = 'validators.%s' % group_name
-            validators = self.redis.smembers(validators_key)
-            group = Group(group_name,
-                          group_dict if group_dict else None,
-                          validators if validators else None)
+            group = Group(group_name, group_dict if group_dict else None)
             group.timestamp = timestamp
             group.current_schema = self.get_latest_schema_for_group(group_name)
             return group

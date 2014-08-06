@@ -8,6 +8,7 @@ from tasr_test import TASRTestCase
 
 import tasr.app
 import requests
+import logging
 from requests.packages.urllib3._collections import HTTPHeaderDict
 from requests.packages.urllib3.response import HTTPResponse
 import httmock
@@ -15,6 +16,10 @@ from webtest import TestApp, TestRequest
 
 
 class TestTASRAppClient(TASRTestCase):
+    '''
+    This is a wrapper class to encapsulate the route_to_testapp method,
+    allowing us to use both httmock (in the test) and requests (in the client).
+    '''
 
     def setUp(self):
         self.tasr = TestApp(tasr.app.TASR_APP)
@@ -26,7 +31,8 @@ class TestTASRAppClient(TASRTestCase):
         We use httmock to intercept the requests call, then we handle
         processing in this function instead -- calling the TestApp wrapper.
         '''
-
+        if url.geturl() != requests_req.url:
+            logging.warn('%s != %s', url.geturl(), requests_req.url)
         # create a webtest TestRequest from the requests PreparedRequest
         webtest_req = TestRequest.blank(requests_req.url,
                                         method=requests_req.method,
@@ -51,8 +57,8 @@ class TestTASRAppClient(TASRTestCase):
                                            status=webtest_resp.status_code)
 
         # get an HTTPAdaptor, then use it to build the requests Response object
-        a = requests.adapters.HTTPAdapter()
-        requests_resp = a.build_response(requests_req, requests_http_resp)
+        adap = requests.adapters.HTTPAdapter()
+        requests_resp = adap.build_response(requests_req, requests_http_resp)
 
         '''For some reason, we need to explicitly set the _content attribute
         after the response object is built -- it is already in there as
