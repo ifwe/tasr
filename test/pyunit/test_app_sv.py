@@ -39,7 +39,8 @@ class TestTASRAppSVAPI(TASRTestCase):
                          u'Non-%s status code: %s' % (code, resp.status_code))
 
     def register_subject(self, subject_name):
-        return self.tasr_app.put(self.url_prefix, {'subject': subject_name})
+        url = '%s/%s' % (self.url_prefix, subject_name)
+        return self.tasr_app.put(url, {'subject_name': subject_name})
 
     def register_schema(self, subject_name, schema_str, expect_errors=False):
         reg_url = '%s/%s/register' % (self.url_prefix, subject_name)
@@ -57,18 +58,25 @@ class TestTASRAppSVAPI(TASRTestCase):
         self.assertEqual(self.event_type, metas[self.event_type].name,
                          'unexpected subject name')
 
-    def test_register_subject_empty_subject_string(self):
-        '''PUT /tasr/subject - empty subject name should return a 400'''
-        resp = self.tasr_app.put(self.url_prefix,
-                                 {'subject': ''},
-                                 expect_errors=True)
-        self.abort_diff_status(resp, 400)
-
-    def test_register_subject_no_body(self):
-        '''PUT /tasr/subject - missing body should return a 400'''
-        resp = self.tasr_app.request(self.url_prefix, method='PUT',
+    def test_register_subject_with_no_config(self):
+        '''PUT /tasr/subject/<subject> - missing body should be OK'''
+        resp = self.tasr_app.request(self.subject_url, method='PUT',
                                      body=None,
-                                     expect_errors=True)
+                                     expect_errors=False)
+        self.abort_diff_status(resp, 200)
+
+    def test_register_subject_with_config_with_empty_field_val(self):
+        '''PUT /tasr/subject - empty subject name should be OK'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': ''},
+                                 expect_errors=False)
+        self.abort_diff_status(resp, 200)
+
+    def test_register_subject_with_config_with_colliding_fields(self):
+        '''PUT /tasr/subject - empty subject name should return a 400'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': ['alice', 'bob']},
+                                 expect_errors=True)
         self.abort_diff_status(resp, 400)
 
     def test_lookup_subject(self):

@@ -130,17 +130,24 @@ def all_subjects():
     return resp_body
 
 
-@TASR_APP.put('/tasr/subject')
-def register_subject():
+@TASR_APP.put('/tasr/subject/<subject_name>')
+def register_subject(subject_name=None):
     '''
     Register a subject (i.e. -- initialize a group).  This is implicit using
     the TASR API when a schema is registered, but is a separate method in the
-    S+V API.  S+V expects to send the subject name as a form value, not as part
-    of the target.  What gets returned is the same as for lookup_subject.
+    S+V API.  S+V accepts a form as the PUT body.  That form, if present, is
+    stored as the group config (that is, group metadata).  What gets returned
+    is a group metadata object, the same as for lookup_subject.
     '''
-    subject_name = request.forms.get('subject', None)
     abort_if_value_bad(subject_name)
-    subject = ASR.register_subject(subject_name)
+    config_dict = dict()
+    for key in request.forms.keys():
+        plist = request.forms.getall(key)
+        if len(plist) > 1:
+            abort(400, 'Multiple values for %s key -- not supported.' % key)
+        if len(plist) == 1:
+            config_dict['config.%s' % key] = plist[0]
+    subject = ASR.register_subject(subject_name, config_dict)
     if subject:
         tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
     return

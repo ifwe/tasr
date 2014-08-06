@@ -41,17 +41,16 @@ def get_all_subjects(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
     return subject_metas.keys()
 
 
-def register_subject(subject_name, host=TASR_HOST, port=TASR_PORT,
-                     timeout=TIMEOUT):
-    ''' PUT /tasr/subject
+def register_subject(subject_name, config_dict=None, host=TASR_HOST,
+                     port=TASR_PORT, timeout=TIMEOUT):
+    ''' PUT /tasr/subject/<subject name>
     Registers a _subject_ (not a schema), ensuring that the group can be
-    established before associating schemas with it.  Note that the subject
-    name is not part of the target, it is sent as a form value in the body
-    of the request.  Returns a GroupMetadata object on success.
+    established before associating schemas with it.  Note that if a form is
+    sent as the PUT body, it should be used to set the subject config map.
+    Returns a GroupMetadata object on success.
     '''
-    url = 'http://%s:%s/tasr/subject' % (host, port)
-    payload = {'subject': subject_name, }
-    resp = requests.put(url, data=payload, timeout=timeout)
+    url = 'http://%s:%s/tasr/subject/%s' % (host, port, subject_name)
+    resp = requests.put(url, data=config_dict, timeout=timeout)
     if resp == None:
         raise TASRError('Timeout for register subject request.')
     if not 200 == resp.status_code:

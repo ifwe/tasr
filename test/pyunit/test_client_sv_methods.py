@@ -82,10 +82,11 @@ class TestTASRClientSVMethods(TestTASRAppClient):
     ########################################################################
     # topic retrieval tests for TASR S+V API
     ########################################################################
-    def bare_register_subject_skeleton(self):
+    def bare_register_subject_skeleton(self, config_dict=None):
         '''register_subject() - skeleton test'''
         with httmock.HTTMock(self.route_to_testapp):
             meta = tasr.client_sv.register_subject(self.event_type,
+                                                   config_dict,
                                                    self.host, self.port)
             self.assertIn(self.event_type, meta.name, 'Bad subject name.')
             return meta
