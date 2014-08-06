@@ -140,7 +140,7 @@ class TestTASR(TASRTestCase):
         self.assertEqual(None, rs, 'expected None back for missing topic')
 
     def test_get_for_id(self):
-        '''get_schema_for_id_str() - as expected'''
+        '''schema_for_id_str() - as expected'''
         rs = self.asr.register_schema(self.event_type, self.schema_str)
         rs.version = None
         rs.topic = None
@@ -150,7 +150,7 @@ class TestTASR(TASRTestCase):
                          u'SHA256 ID retrieved unequal registered schema')
 
     def test_get_first_for_id(self):
-        '''get_schema_for_id_str() - with non-sequential re-registration'''
+        '''schema_for_id_str() - with non-sequential re-registration'''
         rs = self.asr.register_schema(self.event_type, self.schema_str)
         # modify the namespace in the schema to ensure a non-whitespace change
         schema_str_2 = self.schema_str.replace('tagged.events',
@@ -165,13 +165,13 @@ class TestTASR(TASRTestCase):
                          u'SHA256 ID retrieved unequal registered schema')
 
     def test_get_for_schema_str(self):
-        '''get_schema_for_schema_str() - as expected'''
+        '''schema_for_schema_str() - as expected'''
         rs = self.asr.register_schema(self.event_type, self.schema_str)
         re_rs = self.asr.get_schema_for_schema_str(self.schema_str)
         self.assertEqual(rs, re_rs, u'Schema str retrieved unequal reg schema')
 
     def test_get_for_schema_str_fail_for_bad_schema(self):
-        '''get_schema_for_schema_str() - error case'''
+        '''schema_for_schema_str() - error case'''
         self.asr.register_schema(self.event_type, self.schema_str)
         try:
             self.asr.get_schema_for_schema_str("%s }" % self.schema_str)
@@ -180,7 +180,8 @@ class TestTASR(TASRTestCase):
             pass
 
     def test_get_latest_versions_for_topic(self):
-        '''get_latest_schema_versions_for_group() - pull recent 2 when there are 3.'''
+        '''get_latest_schema_versions_for_group() - pull the most recent 2
+        when there are 3.'''
         rs1 = self.asr.register_schema(self.event_type, self.schema_str)
         schema_str_2 = self.schema_str.replace('tagged.events',
                                                'tagged.events.2', 1)

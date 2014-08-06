@@ -102,7 +102,7 @@ class TestTASRClientMethods(TestTASRAppClient):
     ########################################################################
     def bare_get_for_id_str_skeleton(self, id_str):
         with httmock.HTTMock(self.route_to_testapp):
-            func = tasr.client.get_schema_for_id_str
+            func = tasr.client.schema_for_id_str
             rs = func(id_str, self.host, self.port)
             self.assertIn(id_str, (rs.sha256_id, rs.md5_id), 'ID missing')
             return rs

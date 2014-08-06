@@ -104,7 +104,7 @@ class TestTASRClientObject(TestTASRAppClient):
     def obj_get_for_id_str_skeleton(self, id_str):
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client.TASRClient(self.host, self.port)
-            rs = client.get_schema_for_id_str(id_str)
+            rs = client.schema_for_id_str(id_str)
             self.assertIn(id_str, (rs.sha256_id, rs.md5_id), 'ID missing')
             return rs
 
@@ -114,13 +114,13 @@ class TestTASRClientObject(TestTASRAppClient):
             return client.get_schema_version(topic, version)
 
     def test_obj_reg_and_get_by_md5_id(self):
-        '''TASRClient.get_schema_for_id_str() - with md5 ID'''
+        '''TASRClient.schema_for_id_str() - with md5 ID'''
         reg_rs = self.obj_register_schema_skeleton(self.schema_str)
         get_rs = self.obj_get_for_id_str_skeleton(reg_rs.md5_id)
         self.assertEqual(reg_rs, get_rs, 'got unexpected schema')
 
     def test_obj_reg_and_get_by_sha256_id(self):
-        '''TASRClient.get_schema_for_id_str() - with sha256 ID'''
+        '''TASRClient.schema_for_id_str() - with sha256 ID'''
         reg_rs = self.obj_register_schema_skeleton(self.schema_str)
         get_rs = self.obj_get_for_id_str_skeleton(reg_rs.sha256_id)
         self.assertEqual(reg_rs, get_rs, 'got unexpected schema')
@@ -188,7 +188,7 @@ class TestTASRClientObject(TestTASRAppClient):
             rs = client.register_schema(alt_topic, self.schema_str)
             self.assertEqual(1, rs.current_version(alt_topic), 'bad version')
             # now grab the RS by ID, which should have all topic:versions
-            rs2 = client.get_schema_for_id_str(rs.sha256_id)
+            rs2 = client.schema_for_id_str(rs.sha256_id)
             self.assertEqual(1, rs2.current_version(alt_topic), 'bad version')
             self.assertEqual(1, rs2.current_version(self.event_type),
                              'Expected version of 1.')

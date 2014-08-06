@@ -115,7 +115,7 @@ import tasr.headers
 
 
 @TASR_APP.get('/tasr/subject')
-def get_all_subjects():
+def all_subjects():
     '''The S+V API expects this as a plaintext return body with one subject per
     line (using '\n' as delimiters).  We add X-TASR headers with the subject
     names as well.
@@ -164,8 +164,9 @@ def lookup_subject(subject_name=None):
 
 
 @TASR_APP.get('/tasr/subject/<subject_name>/config')
-def get_subject_config():
-    '''TODO: Gets the default field values associated with a subject.'''
+def subject_config():
+    '''TODO: Gets the subject registration timestamp and any default field
+    values associated with a subject.'''
     pass
 
 
@@ -283,7 +284,7 @@ def lookup_all():
 
 
 @TASR_APP.get('/tasr/topic')
-def get_all_topics():
+def all_topics():
     '''This is basically the same as get_all_subjects, but we may want to use
     different header values for TASR vs S+V calls.'''
     hbot = tasr.headers.SubjectHeaderBot(response)
@@ -297,7 +298,7 @@ def get_all_topics():
 
 
 @TASR_APP.get('/tasr/topic/<topic_name>/config')
-def get_topic_config():
+def topic_config():
     '''TODO: Get the field defaults and other config data for the group.'''
     pass
 
@@ -325,7 +326,7 @@ def register_topic_schema(topic_name=None):
 
 @TASR_APP.get('/tasr/topic/<topic_name>/latest')
 @TASR_APP.get('/tasr/topic/<topic_name>')
-def get_latest_schema_for_topic(topic_name=None):
+def latest_schema_for_topic(topic_name=None):
     '''Retrieves the registered schema for the specified group with the highest
     version number.  This is the same logic as lookup_latest, but may return
     different response headers.
@@ -341,7 +342,7 @@ def get_latest_schema_for_topic(topic_name=None):
 
 
 @TASR_APP.get('/tasr/topic/<topic_name>/version/<version>')
-def get_schema_for_topic_and_version(topic_name=None, version=None):
+def schema_for_topic_and_version(topic_name=None, version=None):
     '''Same logic as lookup_by_subject_and_version -- that is, get a schema
     registered for the group with a specified version.  The method is here to
     allow the TASR API to use different response headers, if needed.
@@ -366,7 +367,7 @@ def get_schema_for_topic_and_version(topic_name=None, version=None):
 
 
 @TASR_APP.get('/tasr/id/<base64_id_str:path>')  # IDs w/ slashes, so :path
-def get_schema_for_id_str(base64_id_str=None):
+def schema_for_id_str(base64_id_str=None):
     '''Retrieves a schema registered to one or more groups as identified by an
     ID string.  The ID string is a base64-encoded 'fingerprint' of the schema
     (a leading flag byte followed by an md5 or sha256 digest of the canonical
@@ -393,9 +394,9 @@ def get_schema_for_id_str(base64_id_str=None):
 
 
 @TASR_APP.post('/tasr/schema')
-def get_schema_for_schema_str():
+def schema_for_schema_str():
     '''Retrieves the registered schema for the schema string posted.  As with
-    get_schema_for_id_str, this method is not constrained by a topic.  That is,
+    schema_for_id_str, this method is not constrained by a topic.  That is,
     we convert the passed schema into a fingerprint, then do the rest as if the
     request were made with that ID string.  This means the response headers
     will be like the ones for schemas retrieved by ID string.

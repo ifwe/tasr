@@ -116,7 +116,7 @@ def get_schema_version(topic_name, version, host=TASR_HOST,
                                err_404='No such version.')
 
 
-def get_schema_for_id_str(id_str, host=TASR_HOST,
+def schema_for_id_str(id_str, host=TASR_HOST,
                           port=TASR_PORT, timeout=TIMEOUT):
     ''' GET /tasr/id/<ID string>
     Retrieves a schema that has been registered for at least one topic name as
@@ -133,10 +133,10 @@ def get_schema_for_id_str(id_str, host=TASR_HOST,
                                err_404='No schema for id.')
 
 
-def get_schema_for_schema_str(schema_str, object_on_miss=False,
+def schema_for_schema_str(schema_str, object_on_miss=False,
                               host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
     ''' POST /tasr/schema
-    In essence this is very similar to the get_schema_for_id_str, but with the
+    In essence this is very similar to the schema_for_id_str, but with the
     calculation of the ID string being moved to the server.  That is, the
     client POSTs the schema JSON itself, the server canonicalizes it, then
     calculates the SHA256-based ID string for what was sent, then looks for
@@ -211,12 +211,12 @@ class TASRClient(object):
         return get_schema_version(topic_name, version,
                                   self.host, self.port, self.timeout)
 
-    def get_schema_for_id_str(self, id_str):
+    def schema_for_id_str(self, id_str):
         '''Get a schema identified by an ID str.'''
-        return get_schema_for_id_str(id_str,
+        return schema_for_id_str(id_str,
                                      self.host, self.port, self.timeout)
 
-    def get_schema_for_schema_str(self, schema_str):
+    def schema_for_schema_str(self, schema_str):
         '''Get a schema object using a (non-canonical) schema string.'''
-        return get_schema_for_schema_str(schema_str,
+        return schema_for_schema_str(schema_str,
                                          self.host, self.port, self.timeout)

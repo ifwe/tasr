@@ -53,8 +53,8 @@ With all this in mind, we need the following general repository methods:
   - lookup_subject()
   - register_schema()
   - get_schema_for_group_and_version()
-  - get_schema_for_id_str()
-  - get_schema_for_schema_str()
+  - schema_for_id_str()
+  - schema_for_schema_str()
   - get_latest_schema_for_group()
   - get_latest_schemas_for_group()
 
