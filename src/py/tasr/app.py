@@ -114,30 +114,21 @@ from avro.schema import SchemaParseException
 import tasr.headers
 
 
-@TASR_APP.get('/tasr/subject')
-def all_subjects():
-    '''The S+V API expects this as a plaintext return body with one subject per
-    line (using '\n' as delimiters).  We add X-TASR headers with the subject
-    names as well.
-    '''
-    hbot = tasr.headers.SubjectHeaderBot(response)
-    buff = StringIO.StringIO()
-    for subject in ASR.get_all_topics():
-        hbot.add_subject_name(subject)
-        buff.write('%s\n' % subject.name)
-    resp_body = buff.getvalue()
-    buff.close()
-    return resp_body
-
-
 @TASR_APP.put('/tasr/subject/<subject_name>')
 def register_subject(subject_name=None):
     '''
     Register a subject (i.e. -- initialize a group).  This is implicit using
     the TASR API when a schema is registered, but is a separate method in the
-    S+V API.  S+V accepts a form as the PUT body.  That form, if present, is
-    stored as the group config (that is, group metadata).  What gets returned
-    is a group metadata object, the same as for lookup_subject.
+    S+V API.
+
+    S+V accepts a form as the PUT body.  That form, if present, is stored as
+    the group config (that is, group metadata).  A 200 status indicates that
+    the subject was already registered.  A 201 (created) status indicates that
+    it has been added.  Both cases will have TASR headers holding the subject
+    metadata in the response.  If a config map is defined and it matches the
+    one stored for an existing subject, a 200 is returned.  However, if a
+    config map conflicts with a pre-existing one for the subject, a 409
+    (conflict) status will be returned.
     '''
     abort_if_value_bad(subject_name)
     config_dict = dict()
@@ -146,11 +137,25 @@ def register_subject(subject_name=None):
         if len(plist) > 1:
             abort(400, 'Multiple values for %s key -- not supported.' % key)
         if len(plist) == 1:
-            config_dict['config.%s' % key] = plist[0]
-    subject = ASR.register_subject(subject_name, config_dict)
+            config_dict[key] = plist[0]
+    subject = ASR.lookup_subject(subject_name)
     if subject:
-        tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
-    return
+        if subject.config == config_dict:
+            tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
+            response.status = 200
+            return
+        else:
+            abort(409, 'Config conflicts with existing config for subject.')
+    else:
+        ASR.register_subject(subject_name, config_dict)
+        subject = ASR.lookup_subject(subject_name)
+        if subject:
+            tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
+            response.status = 201
+            return
+        else:
+            # subject failed to create when missing
+            abort(500, 'Failed to create subject.')
 
 
 @TASR_APP.get('/tasr/subject/<subject_name>')
@@ -171,16 +176,122 @@ def lookup_subject(subject_name=None):
 
 
 @TASR_APP.get('/tasr/subject/<subject_name>/config')
-def subject_config():
-    '''TODO: Gets the subject registration timestamp and any default field
-    values associated with a subject.'''
-    pass
+def subject_config(subject_name=None):
+    '''
+    Get the config map for the subject.  The headers contain the normal subject
+    metadata, but the body is plaintext following the java.util.properties
+    expected format (i.e. -- "<key>:<value>\n" or "<key>=<value>\n").
+    '''
+    abort_if_value_bad(subject_name)
+    subject = ASR.lookup_subject(subject_name)
+    if not subject:
+        abort(404, 'Subject %s not registered.' % subject_name)
+    tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
+    buff = StringIO.StringIO()
+    for key, val in subject.config.iteritems():
+        buff.write('%s=%s\n' % (key, val))
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
 
 
 @TASR_APP.post('/tasr/subject/<subject_name>/config')
-def update_subject_config():
-    '''TODO: Updates the default field values associated with a subject.'''
-    pass
+def update_subject_config(subject_name=None):
+    '''Replace the config dict for a subject.'''
+    abort_if_value_bad(subject_name)
+    config_dict = dict()
+    for key in request.forms.keys():
+        plist = request.forms.getall(key)
+        if len(plist) > 1:
+            abort(400, 'Multiple values for %s key -- not supported.' % key)
+        if len(plist) == 1:
+            config_dict['config.%s' % key] = plist[0]
+    subject = ASR.lookup_subject(subject_name)
+    if not subject:
+        abort(404, 'Subject %s not registered.' % subject_name)
+    if subject.config != config_dict:
+        ASR.update_subject_config(subject_name, config_dict)
+        subject = ASR.lookup_subject(subject_name)
+
+    tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
+    buff = StringIO.StringIO()
+    for key, val in subject.config.iteritems():
+        buff.write('%s=%s\n' % (key, val))
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
+
+
+@TASR_APP.get('/tasr/subject/<subject_name>/integral')
+def subject_integral(subject_name=None):
+    '''
+    Indicates whether subject ID strings are guaranteed to parse as integers.
+    Since we support both versions (which are always positive integers) AND
+    multitype IDs (which are base64-encoded bytes), TASR will return False.
+    '''
+    abort_if_value_bad(subject_name)
+    subject = ASR.lookup_subject(subject_name)
+    if not subject:
+        abort(404, 'Subject %s not registered.' % subject_name)
+    tasr.headers.SubjectHeaderBot(response, subject).standard_headers()
+    return u'%s\n' % unicode(False)
+
+
+@TASR_APP.get('/tasr/subject')
+def all_subject_names():
+    '''The S+V API expects this as a plaintext return body with one subject per
+    line (using '\n' as delimiters).  We add X-TASR headers with the subject
+    names as well.
+    '''
+    hbot = tasr.headers.SubjectHeaderBot(response)
+    buff = StringIO.StringIO()
+    for subject in ASR.get_all_topics():
+        hbot.add_subject_name(subject)
+        buff.write('%s\n' % subject.name)
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
+
+
+@TASR_APP.get('/tasr/subject/<subject_name>/all_ids')
+def all_subject_ids(subject_name=None):
+    '''Get all the schema version (SHA256) IDs, in order, one per line.'''
+    abort_if_value_bad(subject_name)
+    subject = ASR.lookup_subject(subject_name)
+    if not subject:
+        abort(404, 'Subject %s not registered.' % subject_name)
+    hbot = tasr.headers.SubjectHeaderBot(response)
+    hbot.standard_headers(subject)
+    buff = StringIO.StringIO()
+    for sha256_id in ASR.get_all_version_sha256_ids_for_group(subject_name):
+        hbot.add_subject_sha256_id_to_list(sha256_id[3:])
+        buff.write('%s\n' % sha256_id[3:])
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
+
+
+@TASR_APP.get('/tasr/subject/<subject_name>/all_schemas')
+def all_subject_schemas(subject_name=None):
+    '''Get all the schema versions, in order, from first to last.  The response
+    body should have one canonical JSON schema body per line, with the newline
+    character acting as the separator.
+    '''
+    abort_if_value_bad(subject_name)
+    subject = ASR.lookup_subject(subject_name)
+    if not subject:
+        abort(404, 'Subject %s not registered.' % subject_name)
+    hbot = tasr.headers.SubjectHeaderBot(response)
+    hbot.standard_headers(subject)
+    buff = StringIO.StringIO()
+    # the -1 depth is a flag to grab all the schemas
+    for schema in ASR.get_latest_schema_versions_for_group(subject_name, -1):
+        hbot.add_subject_sha256_id_to_list(schema.sha256_id)
+        hbot.add_subject_md5_id_to_list(schema.md5_id)
+        buff.write('%s\n' % schema.canonical_schema_str)
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
 
 
 @TASR_APP.put('/tasr/subject/<subject_name>/register')
@@ -188,6 +299,7 @@ def register_subject_schema(subject_name=None):
     '''A method to register_schema a schema for a specified group_name.'''
     abort_if_content_type_not_json(request)
     abort_if_body_empty(request)
+    abort_if_value_bad(subject_name)
     try:
         reg_schema = ASR.register_schema(subject_name, request.body.getvalue())
         if not reg_schema or not reg_schema.is_valid:
@@ -195,16 +307,23 @@ def register_subject_schema(subject_name=None):
         tasr.headers.SchemaHeaderBot(response,
                                      reg_schema,
                                      subject_name).standard_headers()
+        if reg_schema.created:
+            response.status = 201
         return reg_schema.canonical_schema_str
     except SchemaParseException:
         abort(400, 'Invalid schema.  Failed to register_schema.')
 
 
-@TASR_APP.put('/tasr/subject/<subject_name>/id/<version>/register_if_latest')
-def register_schema_if_latest():
-    '''TODO: If the version is the latest for the subject, then register the
-    schema passed as the content body.'''
-    pass
+@TASR_APP.put('/tasr/subject/<subject_name>/register_if_latest/<version>')
+def register_schema_if_latest(subject_name=None, version=None):
+    '''If the version is the latest for the subject, then register the schema
+    passed as the content body.
+    '''
+    abort_if_value_bad(version)
+    latest_schema = ASR.get_latest_schema_for_group(subject_name)
+    if int(version) != latest_schema.current_version(subject_name):
+        abort(409, '%s not latest.' % version)
+    return register_subject_schema(subject_name)
 
 
 @TASR_APP.post('/tasr/subject/<subject_name>/schema')
@@ -238,11 +357,10 @@ def lookup_by_schema_str(subject_name=None):
         abort(400, 'Invalid schema.  Failed to consider.')
 
 
-@TASR_APP.get('/tasr/subject/<subject_name>/id/<version>')
+@TASR_APP.get('/tasr/subject/<subject_name>/version/<version>')
 def lookup_by_subject_and_version(subject_name=None, version=None):
     '''Retrieves the registered schema for the specified group_name with the
-    specified version number.  This correlates to the lookupById() Subject
-    method.  Note that versions count from 1, not 0.
+    specified version number.  Note that versions count from 1, not 0.
     '''
     abort_if_value_bad(subject_name, 'subject name')
     abort_if_value_bad(version, 'subject version')
@@ -264,6 +382,24 @@ def lookup_by_subject_and_version(subject_name=None, version=None):
           (version, subject_name))
 
 
+@TASR_APP.get('/tasr/subject/<subject_name>/id/<id_str:path>')
+def lookup_by_subject_and_id_str(subject_name=None, id_str=None):
+    '''Retrieves the latest version of a schema registered for the specified
+    group_name having the provided multi-type ID.
+    '''
+    abort_if_value_bad(subject_name, 'subject name')
+    abort_if_value_bad(id_str, 'multi-type ID string')
+    reg_schema = ASR.get_schema_for_id_str(id_str)
+    if reg_schema:
+        tasr.headers.SchemaHeaderBot(response,
+                                     reg_schema,
+                                     subject_name).standard_headers()
+        return reg_schema.canonical_schema_str
+    # return nothing if there is no schema registered for the group name
+    abort(404, 'No schema with a multi-type ID %s registered for subject %s.' %
+          (id_str, subject_name))
+
+
 @TASR_APP.get('/tasr/subject/<subject_name>/latest')
 def lookup_latest(subject_name=None):
     '''Retrieves the registered schema for the specified group with the highest
@@ -278,12 +414,6 @@ def lookup_latest(subject_name=None):
         return reg_schema.canonical_schema_str
     # return nothing if there is no schema registered for the group name
     abort(404, 'No schema registered for subject %s.' % subject_name)
-
-
-@TASR_APP.get('/tasr/subject/<subject_name>/all')
-def lookup_all():
-    '''TODO: Get all the schemas for the group, from first to last.'''
-    pass
 
 ##############################################################################
 # TASR API endpoints
@@ -305,9 +435,19 @@ def all_topics():
 
 
 @TASR_APP.get('/tasr/topic/<topic_name>/config')
-def topic_config():
-    '''TODO: Get the field defaults and other config data for the group.'''
-    pass
+def topic_config(topic_name=None):
+    '''Get the config map for the topic.  This is the same as subject_config,
+    so we just call that directly.'''
+    abort_if_value_bad(topic_name)
+    return subject_config(topic_name)
+
+
+@TASR_APP.post('/tasr/topic/<topic_name>/config')
+def update_topic_config(topic_name=None):
+    '''Replace the config dict for a topic.  This is the same as the
+    update_subject_config method, so we just call that.'''
+    abort_if_value_bad(topic_name)
+    return update_subject_config(topic_name)
 
 
 @TASR_APP.put('/tasr/topic/<topic_name>')
@@ -326,6 +466,8 @@ def register_topic_schema(topic_name=None):
         tasr.headers.SchemaHeaderBot(response,
                                      reg_schema,
                                      topic_name).all_headers()
+        if reg_schema.created:
+            response.status = 201
         return reg_schema.canonical_schema_str
     except SchemaParseException:
         abort(400, 'Invalid schema.  Failed to register_schema.')

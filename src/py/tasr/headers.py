@@ -50,6 +50,8 @@ class SubjectHeaderBot(HeaderBot):
     H_CUR_TS = 'X-TASR-SUBJECT-CURRENT-SCHEMA-TIMESTAMP'
     H_CUR_MD5 = 'X-TASR-SUBJECT-CURRENT-SCHEMA-MD5'
     H_CUR_SHA256 = 'X-TASR-SUBJECT-CURRENT-SCHEMA-SHA256'
+    H_MD5_IDS = 'X-TASR-MD5-IDS'
+    H_SHA256_IDS = 'X-TASR-SHA256-IDS'
 
     @staticmethod
     def extract(label, resp):
@@ -57,7 +59,13 @@ class SubjectHeaderBot(HeaderBot):
 
     @staticmethod
     def extract_list(label, resp):
-        return HeaderBot.extract_list(SubjectHeaderBot.__dict__[label], resp)
+        v_list = HeaderBot.extract_list(SubjectHeaderBot.__dict__[label], resp)
+        if len(v_list) == 1:
+            ret_list = []
+            for elem in v_list[0].split(','):
+                ret_list.append(elem.strip())
+            return ret_list
+        return v_list
 
     @staticmethod
     def extract_metadata(resp):
@@ -76,9 +84,15 @@ class SubjectHeaderBot(HeaderBot):
             cur_ts = SubjectHeaderBot.extract('H_CUR_TS', resp)
             cur_md5 = SubjectHeaderBot.extract('H_CUR_MD5', resp)
             cur_sha256 = SubjectHeaderBot.extract('H_CUR_SHA256', resp)
+            md5_list = SubjectHeaderBot.extract_list('H_MD5_IDS', resp)
+            md5_list = md5_list if len(md5_list) > 0 else None
+            sha256_list = SubjectHeaderBot.extract_list('H_SHA256_IDS', resp)
+            sha256_list = sha256_list if len(sha256_list) > 0 else None
             meta = GroupMetadata(name, cur_ver, cur_ts)
             meta.current_sha256_id = cur_sha256
             meta.current_md5_id = cur_md5
+            meta.md5_id_list = md5_list
+            meta.sha256_id_list = sha256_list
             metas[name] = meta
         elif names and len(names) > 1:
             # handle multiple subjects
@@ -107,6 +121,14 @@ class SubjectHeaderBot(HeaderBot):
                      subj.current_schema.md5_id)
             self.set(SubjectHeaderBot.H_CUR_SHA256,
                      subj.current_schema.sha256_id)
+
+    def add_subject_md5_id_to_list(self, md5_id):
+        '''Add header entries for a set of MD5-based IDs.'''
+        self.add(SubjectHeaderBot.H_MD5_IDS, md5_id)
+
+    def add_subject_sha256_id_to_list(self, sha256_id):
+        '''Add header entries for a set of SHA256-based IDs.'''
+        self.add(SubjectHeaderBot.H_SHA256_IDS, sha256_id)
 
     def add_subject_name_current_version(self, subject=None):
         '''Adds an <H_NAME_CUR_VER>: <subject name>=<current version> header'''

@@ -282,11 +282,27 @@ class RedisSchemaRepository(object):
         if rvals:
             # this will update the hash fields and validators if provided
             if config_dict:
-                self.redis.hmset(group_key, config_dict)
+                self.update_subject_config(group_name, config_dict)
             if validators:
                 validators_key = 'validators.%s' % group_name
                 self.redis.sadd(validators_key, validators)
-            return self.lookup_subject(group_name)
+
+    def update_subject_config(self, group_name, config_dict):
+        '''
+        Update the subject config dict.  This blows away all "config.*" fields
+        then adds new ones (and sets their values) based on the passed dict.
+        '''
+        group_key = 'g.%s' % group_name
+        for field in self.redis.hkeys(group_key):
+            if field.startswith('config.'):
+                self.redis.hdel(group_key, field)
+        norm_conf_dict = dict()
+        for key, value in config_dict.iteritems():
+            if key.startswith('config.'):
+                norm_conf_dict[key] = value
+            else:
+                norm_conf_dict['config.%s' % key] = value
+        self.redis.hmset(group_key, norm_conf_dict)
 
     def lookup_subject(self, group_name):
         '''Retrieve a Group object with the specified name or None.  The field
@@ -297,7 +313,14 @@ class RedisSchemaRepository(object):
         group_dict = self.redis.hgetall(group_key)
         if group_dict:
             timestamp = group_dict.pop('group_ts')
-            group = Group(group_name, group_dict if group_dict else None)
+            config_dict = dict()
+            for key, val in group_dict.iteritems():
+                if key.startswith('config.'):
+                    config_dict[key[7:]] = val
+            if len(config_dict) > 0:
+                group = Group(group_name, config_dict)
+            else:
+                group = Group(group_name)
             group.timestamp = timestamp
             group.current_schema = self.get_latest_schema_for_group(group_name)
             return group
@@ -323,10 +346,14 @@ class RedisSchemaRepository(object):
 
         old_d = self.get_schema_dict_for_sha256_id(new_rs.sha256_id)
         if old_d:
+            # schema registered for some group already, so make sure gv_dict
+            # and ts_dict are copied from old_d to new_rs so current_version()
+            # call will work
             new_rs.update_from_dict(old_d)
         else:
             self.redis.hmset(sha256_key, new_rs.as_dict())
             self.redis.hset(md5_key, 'sha256_id', sha256_key)
+            new_rs.created = True
 
         # now that we know the schema is in the hashes, reg for the group_name
         if not new_rs.current_version(group_name):
@@ -341,6 +368,7 @@ class RedisSchemaRepository(object):
             self.redis.rpush(vts_key, now)
             self.redis.hset(sha256_key, vts_key, now)
             new_rs.ts_dict[group_name] = now
+            new_rs.created = True
         else:
             last_ver_sha256_key = self.redis.lrange(vid_key, -1, -1)[0]
             if not last_ver_sha256_key == sha256_key:
@@ -351,6 +379,8 @@ class RedisSchemaRepository(object):
                 self.redis.rpush(vts_key, now)
                 self.redis.hset(sha256_key, vts_key, now)
                 new_rs.ts_dict[group_name] = now
+                # since we are creating a version entry, it counts as creation
+                new_rs.created = True
 
         return new_rs
 
@@ -413,31 +443,37 @@ class RedisSchemaRepository(object):
             return retrieved_rs
         return None
 
-    def get_latest_schema_for_group(self, group):
+    def get_latest_schema_for_group(self, group_name):
         '''A convenience method'''
-        return self.get_schema_for_group_and_version(group, -1)
+        return self.get_schema_for_group_and_version(group_name, -1)
 
-    def get_latest_schema_versions_for_group(self, group, max_versions=5):
+    def get_latest_schema_versions_for_group(self, group_name, max_versions=5):
         '''This retrieves the n most recent schema versions for a group.  If
         max_versions is set to -1, it will return ALL versions for the group.
         Note that this is iterative, and will generate a call for each version
         returned, so keep the depth reasonable.
         '''
         versions = []
-        rs = self.get_latest_schema_for_group(group)
+        rs = self.get_latest_schema_for_group(group_name)
         versions.insert(0, rs)
-        cur_ver = rs.current_version(group)
+        cur_ver = rs.current_version(group_name)
         if max_versions < 0:
             first_ver = 1
         else:
             first_ver = cur_ver - max_versions + 1  # counting from 1, not 0
             first_ver = 1 if first_ver < 1 else first_ver
-        for version in sorted(range(first_ver, cur_ver), reverse=True):
-            version = self.get_schema_for_group_and_version(group, version)
-            versions.insert(0, version)
+        for ver_num in sorted(range(first_ver, cur_ver), reverse=True):
+            schema = self.get_schema_for_group_and_version(group_name, ver_num)
+            versions.insert(0, schema)
         return versions
 
-    def get_versions_for_id_str_and_group(self, id_str, group):
+    def get_all_version_sha256_ids_for_group(self, group_name):
+        '''Get the list of sha256_id values identifying group schema versions.
+        '''
+        vid_key = u'vid.%s' % group_name
+        return self.redis.lrange(vid_key, 0, -1)
+
+    def get_versions_for_id_str_and_group(self, id_str, group_name):
         '''Given an id_str and a group, we should be able to figure out which
         of the group's registered schema versions used the identified schema.
         We ensure we are using an sha256-based id (which are used to populate
@@ -455,7 +491,7 @@ class RedisSchemaRepository(object):
             # we have an md5 id, so get the sha256 id from redis
             md5_key = u'id.%s' % base64_id
             sha256_key = self.redis.hget(md5_key, 'sha256_id')
-        vid_key = u'vid.%s' % group
+        vid_key = u'vid.%s' % group_name
         vlist = []
         version = 0
         for vid in self.redis.lrange(vid_key, 0, -1):

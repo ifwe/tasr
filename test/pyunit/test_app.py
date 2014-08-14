@@ -48,7 +48,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
     def test_register_schema(self):
         '''PUT /tasr/topic/<topic name> - as expected'''
         resp = self.register_schema(self.schema_str)
-        self.abort_diff_status(resp, 200)
+        self.abort_diff_status(resp, 201)
         smeta = SchemaHeaderBot.extract_metadata(resp)
         self.assertIn(self.event_type, smeta.group_names, 'event_type missing')
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
@@ -76,12 +76,13 @@ class TestTASRAppNativeAPI(TASRTestCase):
     def test_reg_and_rereg(self):
         '''PUT /tasr/topic/<topic name> - multiple calls, same schema'''
         resp = self.register_schema(self.schema_str)
-        self.abort_diff_status(resp, 200)
+        self.abort_diff_status(resp, 201)
         smeta = SchemaHeaderBot.extract_metadata(resp)
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
 
         # on the re-registration, we should get the same version back
         resp2 = self.register_schema(self.schema_str)
+        self.abort_diff_status(resp2, 200)
         smeta2 = SchemaHeaderBot.extract_metadata(resp2)
         self.assertEqual(1, smeta2.group_version(self.event_type),
                          'Re-reg produced a different group version.')
@@ -89,7 +90,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
     def test_multi_topic_reg(self):
         '''PUT /tasr/topic/<topic name> - multiple group_names, same schema'''
         put_resp = self.register_schema(self.schema_str)
-        self.abort_diff_status(put_resp, 200)
+        self.abort_diff_status(put_resp, 201)
         smeta = SchemaHeaderBot.extract_metadata(put_resp)
         self.assertEqual(1, smeta.group_version(self.event_type), 'bad ver')
 
@@ -98,6 +99,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
         put_resp2 = self.tasr_app.request(alt_url, method='PUT',
                                           content_type=self.content_type,
                                           body=self.schema_str)
+        self.abort_diff_status(put_resp2, 201)
         smeta2 = SchemaHeaderBot.extract_metadata(put_resp2)
         self.assertEqual(1, smeta2.group_version(alt_topic), 'bad ver')
 
@@ -133,7 +135,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
             # the canonicalized form returned has normalized whitespace
             canonicalized_schema_str = put_resp.body
             schemas.append(canonicalized_schema_str)
-            self.abort_diff_status(put_resp, 200)
+            self.abort_diff_status(put_resp, 201)
 
         # step through and request each version by version number
         for v in range(1, 50):
@@ -158,11 +160,11 @@ class TestTASRAppNativeAPI(TASRTestCase):
         put_resp = self.register_schema(self.schema_str)
         # the canonicalized form returned has normalized whitespace
         canonicalized_schema_str = put_resp.body
-        self.abort_diff_status(put_resp, 200)
+        self.abort_diff_status(put_resp, 201)
         schema_str_2 = self.schema_str.replace('tagged.events',
                                                'tagged.events.alt', 1)
         put_resp2 = self.register_schema(schema_str_2)
-        self.abort_diff_status(put_resp2, 200)
+        self.abort_diff_status(put_resp2, 201)
         put_resp3 = self.register_schema(self.schema_str)
         smeta = SchemaHeaderBot.extract_metadata(put_resp3)
         self.assertEqual(3, smeta.group_version(self.event_type), 'bad ver')
@@ -205,7 +207,7 @@ class TestTASRAppNativeAPI(TASRTestCase):
     def test_get_for_schema(self):
         '''POST /tasr/schema - as expected'''
         put_resp = self.register_schema(self.schema_str)
-        self.abort_diff_status(put_resp, 200)
+        self.abort_diff_status(put_resp, 201)
         # the canonicalized form returned has normalized whitespace
         canonicalized_schema_str = put_resp.body
         put_meta = SchemaHeaderBot.extract_metadata(put_resp)

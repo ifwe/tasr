@@ -14,6 +14,8 @@ class GroupMetadata(object):
         self.current_timestamp = timestamp
         self.current_sha256_id = None
         self.current_md5_id = None
+        self.md5_id_list = None
+        self.sha256_id_list = None
 
 
 class Group(object):

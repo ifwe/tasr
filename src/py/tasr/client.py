@@ -40,7 +40,6 @@ def reg_schema_from_url(url, method='GET', data=None, headers=None,
         elif method.upper() == 'PUT':
             resp = requests.put(url, data=data, headers=headers,
                                 timeout=timeout)
-            #schema_str = data if not resp.content else resp.content
             schema_str = resp.content
 
         # check for error cases
@@ -48,12 +47,13 @@ def reg_schema_from_url(url, method='GET', data=None, headers=None,
             raise TASRError('Timeout for request to %s' % url)
         if 404 == resp.status_code:
             raise TASRError(err_404)
-        if not 200 == resp.status_code:
+        if not resp.status_code in [200, 201]:
             raise TASRError('Failed request to %s (status code: %s)' %
                             (url, resp.status_code))
         # OK - so construct the RS and return it
         ras = RegisteredAvroSchema()
         ras.schema_str = schema_str
+        ras.created = True if resp.status_code == 201 else False
         schema_meta = SchemaHeaderBot.extract_metadata(resp)
         if schema_str and not schema_meta.sha256_id == ras.sha256_id:
             raise TASRError('Schema was modified in transit.')

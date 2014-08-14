@@ -100,6 +100,7 @@ class RegisteredSchema(object):
         self.schema_str = None
         self.gv_dict = dict()
         self.ts_dict = dict()
+        self.created = False
 
     def update_from_dict(self, rs_dict):
         '''A dict containing a schema and topic-version and topic-timestamp
