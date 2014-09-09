@@ -374,6 +374,10 @@ class RedisSchemaRepository(object):
             if not last_ver_sha256_key == sha256_key:
                 # need to override outdated version entry with new one
                 ver = self.redis.rpush(vid_key, sha256_key)
+                # ensure we append the topic.* list as well (for now)
+                topic_ver = self.redis.rpush(topic_key, sha256_key)
+                if ver != topic_ver:
+                    sys.stderr.write('vid.* and topic.* version mismatch')
                 self.redis.hset(sha256_key, vid_key, ver)
                 new_rs.gv_dict[group_name] = ver
                 self.redis.rpush(vts_key, now)
