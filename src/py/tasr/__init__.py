@@ -388,6 +388,61 @@ class RedisSchemaRepository(object):
 
         return new_rs
 
+    def delete_group(self, group_name, remove_orphans=True):
+        '''Deletes a group, including it's "g.", "vid.", "vts.", "topic." keys.
+        If remove_orphans is true, it also removes the "id." keys for schemas
+        orphaned by the group removal.
+
+        CAUTION! This removes groups and schemas.  That can break behavior in
+        tools that use TASR.  This method SHOULD NOT be exposed through the
+        REST app, but rather through a command-line admin tool.
+        '''
+        if not self.redis.hgetall('g.%s' % group_name):
+            raise ValueError("%s not registered." % group_name)
+
+        # first grab the schema SHA256 IDs, then delete all the group keys in a
+        # transaction, conditional on "g." and "vid." not being modified
+        k_vid = 'vid.%s' % group_name
+
+        g_pipe = self.redis.pipeline()
+        g_pipe.watch('g.%s' % group_name)
+        g_pipe.watch(k_vid)
+        g_pipe.multi()
+        id_list = self.redis.lrange(k_vid, 0, -1)
+        g_pipe.delete('g.%s' % group_name)
+        g_pipe.delete(k_vid)
+        g_pipe.delete('vts.%s' % group_name)
+        g_pipe.delete('topic.%s' % group_name)
+        g_pipe.execute()
+
+        # now step through the schemas, removing references to the group, and,
+        # if remove_orphans is true, delete the whole schema if no associations
+        # remain
+        for sha256_id in id_list:
+            id_pipe = self.redis.pipeline()
+            id_pipe.watch(sha256_id)
+            vid_hkeys = self.redis.hscan(sha256_id, 0, 'vid.*')[1].keys()
+            if k_vid in vid_hkeys:
+                if len(vid_hkeys) == 1 and remove_orphans:
+                    # orphan, so remove the SHA256 and MD5 id entries
+                    md5_id = self.redis.hget(sha256_id, 'md5_id')
+                    id_pipe.multi()
+                    id_pipe.delete(md5_id)
+                    id_pipe.delete(sha256_id)
+                    id_pipe.execute()
+                elif len(vid_hkeys) > 0:
+                    # either an orphan and remove_orphans is False, or it is
+                    # cross-registered, so just remove hash entries for group
+                    id_pipe.multi()
+                    id_pipe.hdel(sha256_id, k_vid)
+                    id_pipe.hdel(sha256_id, 'vts.%s' % group_name)
+                    id_pipe.execute()
+                else:
+                    id_pipe.unwatch()
+            else:
+                id_pipe.unwatch()
+        return
+
     def get_schema_for_group_and_version(self, group_name, version):
         '''Gets the registered schema for a group_name and version using the
         registered LUA script.  Note that version must be a whole integer

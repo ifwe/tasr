@@ -6,13 +6,12 @@
      {"name": "source__agent", "type": "string"},
      {"name": "source__ip_address", "type": "string"},
 
-     {"name": "envelope__fields", "type": {"type":"array",
-                                           "items": [ "null", {
-                                                "name": "value",
-                                                "type": "string"
-                                            } ] } },
+     {"name": "envelope__map", "type":
+       { "type": "map", "values": ["null", "string"] }
+     },
 
      {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__event_type", "type": ["null", "string"]},
      {"name": "meta__handlers", "type":
        [ "null",
          { "type": "array", "items":

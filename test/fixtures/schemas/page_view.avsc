@@ -16,6 +16,10 @@
      {"name": "page_view__browser_id", "type": ["null", "string"]},
 
      {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__event_type", "type": ["null", "string"]},
+     {"name": "meta__kvpairs", "type":
+       [ "null", { "type": "map", "values": ["null", "string"] } ]
+     },
      {"name": "meta__handlers", "type":
        [ "null",
          { "type": "array", "items":

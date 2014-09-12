@@ -11,11 +11,15 @@
      {"name": "newsfeed_clicks__click_timestamp", "type": "long"},
      {"name": "newsfeed_clicks__click_type", "type": "int"},
      {"name": "newsfeed_clicks__click_source", "type": "string"},
-     
+
      {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__event_type", "type": ["null", "string"]},
+     {"name": "meta__kvpairs", "type":
+       [ "null", { "type": "map", "values": ["null", "string"] } ]
+     },
      {"name": "meta__handlers", "type":
-       [ "null", 
-         { "type": "array", "items": 
+       [ "null",
+         { "type": "array", "items":
            { "type": "record",
              "name": "Handler",
              "fields": [
@@ -23,9 +27,9 @@
                {"name": "agent", "type": "string"},
                {"name": "ip_address", "type": "string"}
              ]
-           } 
-         } 
-       ] 
+           }
+         }
+       ]
      }
  ]
 }

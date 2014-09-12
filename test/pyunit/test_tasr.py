@@ -200,6 +200,21 @@ class TestTASR(TASRTestCase):
         self.assertEqual(rs2, rs_list[1], 'Expecting RS2 as second entry.')
         self.assertEqual(rs3, rs_list[2], 'Expecting RS3 as third entry.')
 
+    def test_legacy_topic_list_matches_vid_list(self):
+        '''Check that the old topic.* list matches the vid.* list with multiple
+        schema versions for a group registered'''
+        self.asr.register_schema(self.event_type, self.schema_str)
+        schema_str_2 = self.schema_str.replace('tagged.events',
+                                               'tagged.events.2', 1)
+        self.asr.register_schema(self.event_type, schema_str_2)
+        schema_str_3 = self.schema_str.replace('tagged.events',
+                                               'tagged.events.3', 1)
+        self.asr.register_schema(self.event_type, schema_str_3)
+        for ver in range(1, 3):
+            t_val = self.asr.redis.lindex('topic.%s' % self.event_type, ver)
+            v_val = self.asr.redis.lindex('vid.%s' % self.event_type, ver)
+            self.assertEqual(t_val, v_val, 'Mismatch at index %s' % ver)
+
     def test_get_all_subjects(self):
         '''get_all_topics() - as expected'''
         self.assertEqual(0, len(self.asr.get_all_topics()),
@@ -233,6 +248,30 @@ class TestTASR(TASRTestCase):
         self.assertEqual(2, len(vlist), u'Expected two entry version list.')
         self.assertEqual(1, vlist[0], u'Expected first version to be 1.')
         self.assertEqual(3, vlist[1], u'Expected second version to be 3.')
+
+    # deletion tests
+    def test_delete_group_with_orphan_schema(self):
+        self.asr.register_schema(self.event_type, self.schema_str)
+        self.assertTrue(self.asr.lookup_subject(self.event_type),
+                        'Topic should be registered.')
+        self.asr.delete_group(self.event_type)
+        self.assertFalse(self.asr.lookup_subject(self.event_type),
+                         'Topic should not be registered any more.')
+
+    def test_delete_group_with_cross_registered_schema(self):
+        alt_group_name = 'bob'
+        self.asr.register_schema(self.event_type, self.schema_str)
+        self.asr.register_schema(alt_group_name, self.schema_str)
+        self.assertTrue(self.asr.lookup_subject(self.event_type),
+                        'Topic should be registered.')
+        self.assertTrue(self.asr.lookup_subject(alt_group_name),
+                        'Topic should be registered.')
+        self.asr.delete_group(self.event_type)
+        self.assertFalse(self.asr.lookup_subject(self.event_type),
+                         'Topic should not be registered any more.')
+        self.assertTrue(self.asr.lookup_subject(alt_group_name),
+                        'Topic should be registered.')
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASR)

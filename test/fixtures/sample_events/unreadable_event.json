@@ -1,0 +1,18 @@
+{ "source__timestamp": 1234567890l,
+  "source__agent": "unit test",
+  "source__ip_address": "127.0.0.1",
+  "unreadable_event__map":
+    { "transaction_type": None,
+      "transaction_amount": "dGVzdA==",
+      "user_id": "MTIzNDU2Nzg5MA==",
+      "transaction_id": "XHVGRkZGXHVGRjEx",
+      "new_balance": "MTQ=",
+      "result": "cmVzdWx0",
+      "referrer": None,
+      "session_id": "c2Vzc2lvbklk",
+      "processor_tx_id": None,
+      "bonus_amount": "MTA="
+    },
+  "meta__topic_name": "s_gold",
+  "meta__event_type": "gold",
+  "meta__handlers": None }

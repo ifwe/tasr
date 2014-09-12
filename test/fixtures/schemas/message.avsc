@@ -13,11 +13,15 @@
      {"name": "message__sent_timestamp", "type": "int"},
      {"name": "message__session_id", "type": "string"},
      {"name": "message__is_friend", "type": "boolean"},
-     
+
      {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__event_type", "type": ["null", "string"]},
+     {"name": "meta__kvpairs", "type":
+       [ "null", { "type": "map", "values": ["null", "string"] } ]
+     },
      {"name": "meta__handlers", "type":
-       [ "null", 
-         { "type": "array", "items": 
+       [ "null",
+         { "type": "array", "items":
            { "type": "record",
              "name": "Handler",
              "fields": [
@@ -25,9 +29,9 @@
                {"name": "agent", "type": "string"},
                {"name": "ip_address", "type": "string"}
              ]
-           } 
-         } 
-       ] 
+           }
+         }
+       ]
      }
  ]
 }

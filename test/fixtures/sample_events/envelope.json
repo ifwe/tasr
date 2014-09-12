@@ -1,0 +1,18 @@
+{ "source__timestamp": 1234567890l,
+  "source__agent": "unit test",
+  "source__ip_address": "127.0.0.1",
+  "envelope__map":
+    { "transaction_type": "1",
+      "transaction_amount": "11",
+      "user_id": "1234567890",
+      "transaction_id": "abcdefg",
+      "new_balance": "14",
+      "result": "result",
+      "referrer": None,
+      "session_id": "sessionID",
+      "processor_tx_id": None,
+      "bonus_amount": "0"
+    }
+  "meta__topic_name": "s_gold",
+  "meta__event_type": "gold",
+  "meta__handlers": None }

@@ -22,8 +22,12 @@
      {"name": "login_detail__browser_id", "type": ["null","string"]},
      {"name": "login_detail__platform", "type": ["null","string"]},
      {"name": "login_detail__fict_user_id", "type": ["null","string"]},
-     
+
      {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__event_type", "type": ["null", "string"]},
+     {"name": "meta__kvpairs", "type":
+       [ "null", { "type": "map", "values": ["null", "string"] } ]
+     },
      {"name": "meta__handlers", "type":
        [ "null",
          { "type": "array", "items":
@@ -34,9 +38,9 @@
                {"name": "agent", "type": "string"},
                {"name": "ip_address", "type": "string"}
              ]
-           } 
-         } 
-       ] 
+           }
+         }
+       ]
      }
  ]
 }
