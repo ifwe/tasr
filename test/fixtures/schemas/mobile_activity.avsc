@@ -1,0 +1,38 @@
+{"namespace": "tagged.events",
+ "type": "record",
+ "name": "MobileActivity",
+ "fields": [
+     {"name": "source__timestamp", "type": "long"},
+     {"name": "source__agent", "type": "string"},
+     {"name": "source__ip_address", "type": "string"},
+
+     {"name": "mobile_activity__event_timestamp", "type": long"},
+     {"name": "mobile_activity__user_id", "type": "long"},
+     {"name": "mobile_activity__session_id", "type": "string"},
+     {"name": "mobile_activity__event_name", "type": ["null", "string"]},
+     {"name": "mobile_activity__item_id", "type": ["null", "int"]},
+     {"name": "mobile_activity__target_user_id", "type": ["null", "long"]},
+     {"name": "mobile_activity__active_view", "type": ["null", "string"]},
+     {"name": "mobile_activity__push_type", "type": ["null", "string"]},
+
+     {"name": "meta__topic_name", "type": ["null", "string"]},
+     {"name": "meta__event_type", "type": ["null", "string"]},
+     {"name": "meta__kvpairs", "type":
+       [ "null", { "type": "map", "values": ["null", "string"] } ]
+     },
+     {"name": "meta__handlers", "type":
+       [ "null",
+         { "type": "array", "items":
+           { "type": "record",
+             "name": "Handler",
+             "fields": [
+               {"name": "timestamp", "type": "long"},
+               {"name": "agent", "type": "string"},
+               {"name": "ip_address", "type": "string"}
+             ]
+           }
+         }
+       ]
+     }
+ ]
+}
