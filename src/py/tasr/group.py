@@ -7,6 +7,10 @@ Created on Jul 8, 2014
 import re
 
 
+class InvalidGroupException(Exception):
+    '''Likely an invalid group name.'''
+
+
 class GroupMetadata(object):
     def __init__(self, name=None, version=None, timestamp=None):
         self.name = name
@@ -29,7 +33,7 @@ class Group(object):
     def __init__(self, group_name, config_dict=None, validators=None):
         '''The name is required, the config_dict and validators are not.'''
         if not Group.validate_group_name(group_name):
-            raise ValueError('Invalid group name: \"%s\"' % group_name)
+            raise InvalidGroupException('Bad group name: \"%s\"' % group_name)
         self.name = group_name
         self.timestamp = None
         self.current_schema = None

@@ -10,6 +10,7 @@ import unittest
 import avro.schema
 import time
 from tasr import AvroSchemaRepository
+from tasr.group import InvalidGroupException
 
 try:
     import redis
@@ -43,6 +44,18 @@ class TestTASR(TASRTestCase):
             self.asr.redis.flushdb()
 
     # registration tests
+    def test_register_subject(self):
+        '''register_subject() - error case'''
+        self.asr.register_subject(self.event_type)
+
+    def test_register_subject_fail_for_invalid_subject(self):
+        '''register_subject() - error case'''
+        try:
+            self.asr.register_subject("%s-B" % self.event_type)
+            self.fail(u'Should have thrown an InvalidGroupException.')
+        except InvalidGroupException:
+            pass
+
     def test_register_schema(self):
         '''register_schema() - as expected'''
         rs = self.asr.register_schema(self.event_type, self.schema_str)
@@ -64,6 +77,14 @@ class TestTASR(TASRTestCase):
             self.asr.register_schema(self.event_type, "%s }" % self.schema_str)
             self.fail(u'Should have thrown a SchemaParseException.')
         except avro.schema.SchemaParseException:
+            pass
+
+    def test_register_fail_for_invalid_subject(self):
+        '''register_schema() - error case'''
+        try:
+            self.asr.register_schema("%s-B" % self.event_type, self.schema_str)
+            self.fail(u'Should have thrown an InvalidGroupException.')
+        except InvalidGroupException:
             pass
 
     def test_reg_and_rereg(self):

@@ -74,7 +74,7 @@ import io
 import sys
 import struct
 from tasr.registered_schema import RegisteredSchema
-from tasr.group import Group
+from tasr.group import Group, InvalidGroupException
 
 
 class RedisSchemaRepository(object):
@@ -276,6 +276,8 @@ class RedisSchemaRepository(object):
     def register_subject(self, group_name, config_dict=None, validators=None):
         '''Initialize a group, optionally specifying a config dict of default
         values and a set of validator class name strings.'''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         group_key = 'g.%s' % group_name
         timestamp = long(time.time())
         rvals = self.lua_init_group(keys=[group_key, timestamp, ])
@@ -292,6 +294,8 @@ class RedisSchemaRepository(object):
         Update the subject config dict.  This blows away all "config.*" fields
         then adds new ones (and sets their values) based on the passed dict.
         '''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         group_key = 'g.%s' % group_name
         for field in self.redis.hkeys(group_key):
             if field.startswith('config.'):
@@ -309,6 +313,8 @@ class RedisSchemaRepository(object):
         names starting with "group_" should set group level attributes.  The
         field names starting with "default_" should set field defaults for the
         group schemas.'''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         group_key = 'g.%s' % group_name
         group_dict = self.redis.hgetall(group_key)
         if group_dict:
@@ -327,6 +333,8 @@ class RedisSchemaRepository(object):
 
     def register_schema(self, group_name, schema_str):
         '''Register a schema string as a version for a group_name.'''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         new_rs = self.instantiate_registered_schema()
         new_rs.schema_str = schema_str
         if not new_rs.validate_schema_str():
@@ -393,6 +401,10 @@ class RedisSchemaRepository(object):
         If remove_orphans is true, it also removes the "id." keys for schemas
         orphaned by the group removal.
 
+        Note that we DO NOT test for group name validity here.  This allows the
+        method to be used to delete malformed groups, and is an intentional
+        omission.
+
         CAUTION! This removes groups and schemas.  That can break behavior in
         tools that use TASR.  This method SHOULD NOT be exposed through the
         REST app, but rather through a command-line admin tool.
@@ -448,6 +460,8 @@ class RedisSchemaRepository(object):
         registered LUA script.  Note that version must be a whole integer
         greater than 0 or -1, which is a flag for the most current version.
         '''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         vid_key = u'vid.%s' % group_name
         index = int(version)
         if index == 0:
@@ -512,6 +526,8 @@ class RedisSchemaRepository(object):
         Note that this is iterative, and will generate a call for each version
         returned, so keep the depth reasonable.
         '''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         versions = []
         rs = self.get_latest_schema_for_group(group_name)
         versions.insert(0, rs)
@@ -529,6 +545,8 @@ class RedisSchemaRepository(object):
     def get_all_version_sha256_ids_for_group(self, group_name):
         '''Get the list of sha256_id values identifying group schema versions.
         '''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         vid_key = u'vid.%s' % group_name
         return self.redis.lrange(vid_key, 0, -1)
 
@@ -541,6 +559,8 @@ class RedisSchemaRepository(object):
         registration of the same schema.  This does not come up much, so we
         don't bother with a LUA script.
         '''
+        if not Group.validate_group_name(group_name):
+            raise InvalidGroupException('Bad group name: %s' % group_name)
         base64_id = id_str[3:] if id_str.startswith('id.') else id_str
         sha256_key = None
         if len(base64_id) == 44:
