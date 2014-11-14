@@ -237,11 +237,11 @@ class TestTASR(TASRTestCase):
             self.assertEqual(t_val, v_val, 'Mismatch at index %s' % ver)
 
     def test_get_all_subjects(self):
-        '''get_all_topics() - as expected'''
-        self.assertEqual(0, len(self.asr.get_all_topics()),
+        '''get_all_subjects() - as expected'''
+        self.assertEqual(0, len(self.asr.get_all_subjects()),
                          'should not be any topics yet')
         self.asr.register_schema(self.event_type, self.schema_str)
-        subjects = self.asr.get_all_topics()
+        subjects = self.asr.get_all_subjects()
         self.assertEqual(1, len(subjects), 'should have 1')
         self.assertEqual(self.event_type, subjects[0].name,
                          'expected subject missing')
@@ -249,8 +249,24 @@ class TestTASR(TASRTestCase):
                                                'tagged.events.alt', 1)
         # reg another version -- should not increase number of topics
         self.asr.register_schema(self.event_type, schema_str_2)
-        subjects = self.asr.get_all_topics()
+        subjects = self.asr.get_all_subjects()
         self.assertEqual(1, len(subjects), 'should still have 1 subject')
+
+    def test_get_active_subjects(self):
+        '''get_active_subjects() - as expected'''
+        self.assertEqual(0, len(self.asr.get_all_subjects()),
+                         'should not be any topics yet')
+        self.assertEqual(0, len(self.asr.get_active_subjects()),
+                         'should not be any topics yet')
+        # reg the subject without a schema -- active count should still be 0
+        self.asr.register_subject(self.event_type)
+        self.assertEqual(1, len(self.asr.get_all_subjects()), 'should have 1')
+        self.assertEqual(0, len(self.asr.get_active_subjects()),
+                         'should not be any ACTIVE topics yet')
+        # now reg a schema for the subject
+        self.asr.register_schema(self.event_type, self.schema_str)
+        self.assertEqual(1, len(self.asr.get_all_subjects()), 'should have 1')
+        self.assertEqual(1, len(self.asr.get_active_subjects()), 'should be 1')
 
     def test_multi_version_for_topic(self):
         '''get_versions_for_id_str_and_group() - as expected'''

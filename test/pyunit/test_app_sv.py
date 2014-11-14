@@ -200,6 +200,67 @@ class TestTASRAppSVAPI(TASRTestCase):
         self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
                              'Expected group_names in body to match headers.')
 
+    def test_active_subjects(self):
+        '''GET /tasr/active_subjects - gets _active_ subjects (that is, ones
+        with at least one schema), as expected'''
+        # reg two vers for target subject and one for an alt subject
+        self.register_subject(self.event_type)
+        alt_subject_name = 'bob'
+        self.register_subject(alt_subject_name)
+        # now get all and check the headers
+        resp = self.tasr_app.request(self.url_prefix, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have a GroupMetadata object for each group in the headers
+        for sub_name in [self.event_type, alt_subject_name]:
+            self.assertIn(sub_name, meta_dict.keys(), 'missing subject')
+            subj = meta_dict[sub_name]
+            self.assertEqual(sub_name, subj.name, 'bad subject name')
+
+        # now get the ACTIVE subjects, which should be empty so far
+        url = 'http://localhost:8080/tasr/active_subjects'
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have no GroupMetadata objects
+        for sub_name in [self.event_type, alt_subject_name]:
+            self.assertNotIn(sub_name, meta_dict.keys(), 'unexpected subject')
+
+        # now register a schema for the base subject and recheck
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 201)
+
+        # the get_all should be unchanged, the get_active should have one
+        resp = self.tasr_app.request(self.url_prefix, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have a GroupMetadata object for each group in the headers
+        for sub_name in [self.event_type, alt_subject_name]:
+            self.assertIn(sub_name, meta_dict.keys(), 'missing subject')
+            subj = meta_dict[sub_name]
+            self.assertEqual(sub_name, subj.name, 'bad subject name')
+
+        # now get the ACTIVE subjects, which should be empty so far
+        url = 'http://localhost:8080/tasr/active_subjects'
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have a GroupMetadata object for one group in the headers
+        self.assertNotIn(alt_subject_name, meta_dict.keys(), 'unexpected obj')
+        # the event_type should be there
+        self.assertIn(self.event_type, meta_dict.keys(), 'missing subject')
+        subj = meta_dict[self.event_type]
+        self.assertEqual(self.event_type, subj.name, 'bad subject name')
+
+        # lastly check the body
+        buff = StringIO.StringIO(resp.body)
+        group_names = []
+        for topic_line in buff:
+            group_names.append(topic_line.strip())
+        buff.close()
+        self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
+                             'Expected group_names in body to match headers.')
+
     def test_all_subject_ids(self):
         '''GET /tasr/subject/<subject>/all_ids - gets schema IDs for all
         versions of the subject, in order, one per line in the response body.

@@ -128,6 +128,33 @@ def is_subject_integral(subject_name, host=TASR_HOST,
     return False
 
 
+def get_active_subject_names(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
+    ''' GET /tasr/active_subjects
+    Retrieves all the active subject names (ones with schemas), both as X-TASR
+    header fields and as plain text, one per line, in the response body.  This
+    method returns a list of subject name strings.
+    '''
+    url = 'http://%s:%s/tasr/active_subjects' % (host, port)
+    resp = requests.get(url, timeout=timeout)
+    if resp == None:
+        raise TASRError('Timeout for get active subjects request.')
+    if resp.status_code != 200:
+        raise TASRError('Failed to get active subjects (status code: %s)' %
+                        resp.status_code)
+    subject_metas = SubjectHeaderBot.extract_metadata(resp)
+    # check that subject_metas.keys() matches the body list
+    buff = StringIO.StringIO(resp.content)
+    name_list = []
+    for line in buff:
+        name_list.append(line.strip())
+    buff.close()
+    if len(subject_metas.keys()) != len(name_list):
+        raise TASRError('Header-body mismatch for subject name lists.')
+    if sorted(subject_metas.keys()) != sorted(name_list):
+        raise TASRError('Header-body mismatch for subject name lists.')
+    return subject_metas.keys()
+
+
 def get_all_subject_names(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
     ''' GET /tasr/subject
     Retrieves all the registered subject names, both as X-TASR header fields
@@ -328,6 +355,10 @@ class TASRClientSV(object):
         '''Indicates whether schema IDs are guaranteed to be integers.'''
         return is_subject_integral(subject_name,
                                    self.host, self.port, self.timeout)
+
+    def active_subject_names(self):
+        '''Returns a list of active subject names.'''
+        return get_active_subject_names(self.host, self.port, self.timeout)
 
     def all_subject_names(self):
         '''Returns a list of registered subject names.'''

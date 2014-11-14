@@ -284,7 +284,6 @@ class TestTASRAppNativeAPI(TASRTestCase):
         self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
                              'Expected group_names in body to match headers.')
 
-
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRAppNativeAPI)
     unittest.TextTestRunner(verbosity=2).run(suite)

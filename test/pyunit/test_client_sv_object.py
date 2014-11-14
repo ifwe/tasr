@@ -104,6 +104,23 @@ class TestTASRClientSVObject(TestTASRAppClient):
             client = tasr.client_sv.TASRClientSV(self.host, self.port)
             self.assertFalse(client.is_subject_integral(self.event_type))
 
+    def test_obj_get_get_active_subject_names_with_none_and_one_present(self):
+        '''TASRClientSV.active_subject_names() - as expected'''
+        self.obj_register_subject_skeleton()
+        # without a schema, the subject is not active
+        with httmock.HTTMock(self.route_to_testapp):
+            client = tasr.client_sv.TASRClientSV(self.host, self.port)
+            subject_names = client.active_subject_names()
+            self.assertEqual(0, len(subject_names), 'expected no groups')
+
+        # now reg a schema and try again
+        self.obj_register_schema_skeleton(self.schema_str)
+        with httmock.HTTMock(self.route_to_testapp):
+            client = tasr.client_sv.TASRClientSV(self.host, self.port)
+            subject_names = client.active_subject_names()
+            self.assertListEqual(subject_names, [self.event_type, ],
+                                 'unexpected groups: %s' % subject_names)
+
     def test_obj_all_subject_names_with_one_present(self):
         '''TASRClientSV.all_subject_names() - as expected'''
         self.obj_register_subject_skeleton()

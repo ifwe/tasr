@@ -67,6 +67,22 @@ def reg_schema_from_url(url, method='GET', data=None, headers=None,
 #############################################################################
 
 
+def get_active_topics(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
+    ''' GET /tasr/active_topics
+    Retrieves available metadata for active topics (i.e. -- groups) with
+    registered schemas.  A dict of <topic name>:<topic metadata> is returned.
+    '''
+    url = 'http://%s:%s/tasr/active_topics' % (host, port)
+    resp = requests.get(url, timeout=timeout)
+    if resp == None:
+        raise TASRError('Timeout for request to %s' % url)
+    if not 200 == resp.status_code:
+        raise TASRError('Failed request to %s (status code: %s)' %
+                        (url, resp.status_code))
+    topic_metas = SubjectHeaderBot.extract_metadata(resp)
+    return topic_metas
+
+
 def get_all_topics(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
     ''' GET /tasr/topic
     Retrieves available metadata for all the topics (i.e. -- groups) with
@@ -192,6 +208,10 @@ class TASRClient(object):
         self.timeout = timeout
 
     # topic calls
+    def get_active_topics(self):
+        '''Returns a dict of <topic name>:<metadata> for active topics.'''
+        return get_active_topics(self.host, self.port, self.timeout)
+
     def get_all_topics(self):
         '''Returns a dict of <topic name>:<metadata> for all topics.'''
         return get_all_topics(self.host, self.port, self.timeout)

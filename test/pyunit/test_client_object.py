@@ -82,14 +82,14 @@ class TestTASRClientObject(TestTASRAppClient):
     ########################################################################
     # topic retrieval tests for TASR API
     ########################################################################
-    def test_obj_get_get_all_subjects_with_none_present(self):
+    def test_obj_get_get_all_topics_with_none_present(self):
         '''TASRClient.get_all_topics()'''
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client.TASRClient(self.host, self.port)
             group_metas = client.get_all_topics()
             self.assertEqual(0, len(group_metas), 'expected no groups')
 
-    def test_obj_get_get_all_subjects_with_one_present(self):
+    def test_obj_get_get_all_topics_with_one_present(self):
         '''TASRClient.get_all_topics()'''
         self.obj_register_schema_skeleton(self.schema_str)
         with httmock.HTTMock(self.route_to_testapp):

@@ -31,6 +31,7 @@ the standard POSIX signals as you would expect a (well-behaved) daemon to do.
 ##############################################################################
 import sys
 import argparse
+import tasr.group
 from tasr.tasr_config import CONFIG
 from ConfigParser import NoSectionError
 
@@ -101,9 +102,17 @@ def abort_if_body_empty(req):
 
 
 def abort_if_value_bad(val, label='expected value'):
-    '''Many of the S+V endpoints require a subject name.'''
+    '''Bail if val is None or an empty string.'''
     if val == None or val == '':
         abort(400, 'Missing %s.' % label)
+
+
+def abort_if_subject_bad(val, label='subject name'):
+    '''Many of the S+V endpoints require a subject name. Check that it is valid
+    as well as being non-null.'''
+    abort_if_value_bad(val, label)
+    if not tasr.group.Group.validate_group_name(val):
+        abort(400, 'Bad %s: %s.' % (label, val))
 
 
 ##############################################################################
@@ -130,7 +139,7 @@ def register_subject(subject_name=None):
     config map conflicts with a pre-existing one for the subject, a 409
     (conflict) status will be returned.
     '''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     config_dict = dict()
     for key in request.forms.keys():
         plist = request.forms.getall(key)
@@ -167,7 +176,7 @@ def lookup_subject(subject_name=None):
     headers should indicate the version number, timestamp, md5_id and sha256_id
     for the current schema (if there is one).
     '''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     subject = ASR.lookup_subject(subject_name)
     if not subject:
         abort(404, 'Subject %s not registered.' % subject_name)
@@ -182,7 +191,7 @@ def subject_config(subject_name=None):
     metadata, but the body is plaintext following the java.util.properties
     expected format (i.e. -- "<key>:<value>\n" or "<key>=<value>\n").
     '''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     subject = ASR.lookup_subject(subject_name)
     if not subject:
         abort(404, 'Subject %s not registered.' % subject_name)
@@ -198,7 +207,7 @@ def subject_config(subject_name=None):
 @TASR_APP.post('/tasr/subject/<subject_name>/config')
 def update_subject_config(subject_name=None):
     '''Replace the config dict for a subject.'''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     config_dict = dict()
     for key in request.forms.keys():
         plist = request.forms.getall(key)
@@ -229,7 +238,7 @@ def subject_integral(subject_name=None):
     Since we support both versions (which are always positive integers) AND
     multitype IDs (which are base64-encoded bytes), TASR will return False.
     '''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     subject = ASR.lookup_subject(subject_name)
     if not subject:
         abort(404, 'Subject %s not registered.' % subject_name)
@@ -245,7 +254,23 @@ def all_subject_names():
     '''
     hbot = tasr.headers.SubjectHeaderBot(response)
     buff = StringIO.StringIO()
-    for subject in ASR.get_all_topics():
+    for subject in ASR.get_all_subjects():
+        hbot.add_subject_name(subject)
+        buff.write('%s\n' % subject.name)
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
+
+
+@TASR_APP.get('/tasr/active_subjects')
+def active_subject_names():
+    '''The S+V API expects this as a plaintext return body with one subject per
+    line (using '\n' as delimiters).  We add X-TASR headers with the subject
+    names as well.
+    '''
+    hbot = tasr.headers.SubjectHeaderBot(response)
+    buff = StringIO.StringIO()
+    for subject in ASR.get_active_subjects():
         hbot.add_subject_name(subject)
         buff.write('%s\n' % subject.name)
     resp_body = buff.getvalue()
@@ -256,7 +281,7 @@ def all_subject_names():
 @TASR_APP.get('/tasr/subject/<subject_name>/all_ids')
 def all_subject_ids(subject_name=None):
     '''Get all the schema version (SHA256) IDs, in order, one per line.'''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     subject = ASR.lookup_subject(subject_name)
     if not subject:
         abort(404, 'Subject %s not registered.' % subject_name)
@@ -277,7 +302,7 @@ def all_subject_schemas(subject_name=None):
     body should have one canonical JSON schema body per line, with the newline
     character acting as the separator.
     '''
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     subject = ASR.lookup_subject(subject_name)
     if not subject:
         abort(404, 'Subject %s not registered.' % subject_name)
@@ -299,7 +324,7 @@ def register_subject_schema(subject_name=None):
     '''A method to register_schema a schema for a specified group_name.'''
     abort_if_content_type_not_json(request)
     abort_if_body_empty(request)
-    abort_if_value_bad(subject_name)
+    abort_if_subject_bad(subject_name)
     try:
         reg_schema = ASR.register_schema(subject_name, request.body.getvalue())
         if not reg_schema or not reg_schema.is_valid:
@@ -362,7 +387,7 @@ def lookup_by_subject_and_version(subject_name=None, version=None):
     '''Retrieves the registered schema for the specified group_name with the
     specified version number.  Note that versions count from 1, not 0.
     '''
-    abort_if_value_bad(subject_name, 'subject name')
+    abort_if_subject_bad(subject_name)
     abort_if_value_bad(version, 'subject version')
     reg_schema = ASR.get_schema_for_group_and_version(subject_name, version)
     if reg_schema:
@@ -387,7 +412,7 @@ def lookup_by_subject_and_id_str(subject_name=None, id_str=None):
     '''Retrieves the latest version of a schema registered for the specified
     group_name having the provided multi-type ID.
     '''
-    abort_if_value_bad(subject_name, 'subject name')
+    abort_if_subject_bad(subject_name)
     abort_if_value_bad(id_str, 'multi-type ID string')
     reg_schema = ASR.get_schema_for_id_str(id_str)
     if reg_schema:
@@ -405,7 +430,7 @@ def lookup_latest(subject_name=None):
     '''Retrieves the registered schema for the specified group with the highest
     version number.
     '''
-    abort_if_value_bad(subject_name, 'subject name')
+    abort_if_subject_bad(subject_name)
     reg_schema = ASR.get_latest_schema_for_group(subject_name)
     if reg_schema:
         tasr.headers.SchemaHeaderBot(response,
@@ -426,9 +451,23 @@ def all_topics():
     different header values for TASR vs S+V calls.'''
     hbot = tasr.headers.SubjectHeaderBot(response)
     buff = StringIO.StringIO()
-    for topic in ASR.get_all_topics():
+    for topic in ASR.get_all_subjects():
         hbot.add_subject_name_current_version(topic)
         buff.write('%s\n' % topic.name)
+    resp_body = buff.getvalue()
+    buff.close()
+    return resp_body
+
+
+@TASR_APP.get('/tasr/active_topics')
+def active_topic_names():
+    '''This is basically the same as get_active_subjects, but we may want to
+    use different header values for TASR vs S+V calls.'''
+    hbot = tasr.headers.SubjectHeaderBot(response)
+    buff = StringIO.StringIO()
+    for subject in ASR.get_active_subjects():
+        hbot.add_subject_name(subject)
+        buff.write('%s\n' % subject.name)
     resp_body = buff.getvalue()
     buff.close()
     return resp_body
@@ -438,7 +477,7 @@ def all_topics():
 def topic_config(topic_name=None):
     '''Get the config map for the topic.  This is the same as subject_config,
     so we just call that directly.'''
-    abort_if_value_bad(topic_name)
+    abort_if_subject_bad(topic_name, 'topic name')
     return subject_config(topic_name)
 
 
@@ -446,7 +485,7 @@ def topic_config(topic_name=None):
 def update_topic_config(topic_name=None):
     '''Replace the config dict for a topic.  This is the same as the
     update_subject_config method, so we just call that.'''
-    abort_if_value_bad(topic_name)
+    abort_if_subject_bad(topic_name, 'topic name')
     return update_subject_config(topic_name)
 
 
@@ -480,7 +519,7 @@ def latest_schema_for_topic(topic_name=None):
     version number.  This is the same logic as lookup_latest, but may return
     different response headers.
     '''
-    abort_if_value_bad(topic_name, 'topic name')
+    abort_if_subject_bad(topic_name, 'topic name')
     reg_schema = ASR.get_latest_schema_for_group(topic_name)
     if reg_schema:
         # we leave out the topic_name to get back ver & ts for all assoc topics
@@ -496,7 +535,7 @@ def schema_for_topic_and_version(topic_name=None, version=None):
     registered for the group with a specified version.  The method is here to
     allow the TASR API to use different response headers, if needed.
     '''
-    abort_if_value_bad(topic_name, 'topic name')
+    abort_if_subject_bad(topic_name, 'topic name')
     abort_if_value_bad(version, 'topic version')
     reg_schema = ASR.get_schema_for_group_and_version(topic_name, version)
     if reg_schema:

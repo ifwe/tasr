@@ -48,7 +48,7 @@ using either the MD5 (16 bytes) or SHA256 (32 bytes) hashes.
 
 With all this in mind, we need the following general repository methods:
 
-  - get_all_topics()
+  - get_all_subjects()
   - register_subject()
   - lookup_subject()
   - register_schema()
@@ -259,15 +259,31 @@ class RedisSchemaRepository(object):
         rvals = self.lua_get_for_md5(keys=[md5_key, ])
         return RedisSchemaRepository.pair_seq_2_dict(rvals)
 
+    def get_cur_versions(self):
+        '''A low-level method to get current version numbers for each group'''
+        rvals = self.lua_get_cur_versions(keys=[])
+        rdict = RedisSchemaRepository.pair_seq_2_dict(rvals)
+        return rdict if rdict else {}
+
     ##########################################################################
     # exposed, API methods
     ##########################################################################
 
-    def get_all_topics(self):
+    def get_all_subjects(self):
         '''Return a set of current group objects.'''
         group_names = []
         for group_key in self.redis.keys('g.*'):
             group_name = group_key[2:]
+            group = self.lookup_subject(group_name)
+            group.current_schema = self.get_latest_schema_for_group(group_name)
+            group_names.append(group)
+        return group_names
+
+    def get_active_subjects(self):
+        '''Return a set of current group objects with at least one schema.'''
+        group_names = []
+        for group_key in self.get_cur_versions():
+            group_name = group_key[4:]
             group = self.lookup_subject(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
             group_names.append(group)

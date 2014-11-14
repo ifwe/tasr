@@ -111,6 +111,23 @@ class TestTASRClientSVMethods(TestTASRAppClient):
                                                         self.port)
             self.assertFalse(is_int)
 
+    def test_bare_get_get_active_subject_names_with_none_and_one_present(self):
+        '''get_active_subject_names() - as expected'''
+        self.bare_register_subject_skeleton()
+        # without a schema, the subject is not active
+        with httmock.HTTMock(self.route_to_testapp):
+            subject_names = tasr.client_sv.get_active_subject_names(self.host,
+                                                                    self.port)
+            self.assertEqual(0, len(subject_names), 'expected no subjects')
+
+        # now reg a schema and try again
+        self.bare_register_schema_skeleton(self.schema_str)
+        with httmock.HTTMock(self.route_to_testapp):
+            subject_names = tasr.client_sv.get_active_subject_names(self.host,
+                                                                    self.port)
+            self.assertListEqual(subject_names, [self.event_type, ],
+                                 'unexpected groups: %s' % subject_names)
+
     def test_bare_get_get_all_subject_names_with_one_present(self):
         '''get_all_subject_names() - as expected'''
         self.bare_register_subject_skeleton()
