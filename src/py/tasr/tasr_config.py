@@ -46,7 +46,7 @@ class TASRConfig(object):
         if mode and self.config.has_section(mode):
             self.mode = mode
         else:
-            self.mode = 'prod'
+            self.mode = 'standard'
 
     def _get_str_or_none(self, key):
         if key in self.config.options(self.mode):
@@ -58,31 +58,6 @@ class TASRConfig(object):
     def _get_int_or_none(self, key):
         val_str = self._get_str_or_none(key)
         return int(val_str) if val_str else None
-
-    @property
-    def working_directory(self):
-        '''Gets the working directory for the daemon.'''
-        return self._get_str_or_none('working_directory')
-
-    @property
-    def stdout_path(self):
-        '''Gets the stdout path for the daemon.'''
-        return self._get_str_or_none('stdout_path')
-
-    @property
-    def stderr_path(self):
-        '''Gets the stderr path for the daemon.'''
-        return self._get_str_or_none('stderr_path')
-
-    @property
-    def pidfile_path(self):
-        '''Gets the pidfile path for the daemon.'''
-        return self._get_str_or_none('pidfile_path')
-
-    @property
-    def local_schema_path(self):
-        '''Gets the local schema path for the daemon.'''
-        return self._get_str_or_none('local_schema_path')
 
     @property
     def host(self):
@@ -103,6 +78,17 @@ class TASRConfig(object):
     def redis_port(self):
         '''Gets the Redis port for the daemon.'''
         return self._get_int_or_none('redis_port')
+
+    @property
+    def log_file(self):
+        '''Gets the log file for the daemon.'''
+        return self._get_str_or_none('log_file')
+
+    @property
+    def log_level(self):
+        '''Gets the log level for the daemon.'''
+        return self._get_str_or_none('log_level')
+
 
 # On module import, look for an available config file and instantiate the obj.
 CONFIG = TASRConfig(CONF_PATH)

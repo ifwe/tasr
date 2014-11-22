@@ -57,3 +57,15 @@ class Group(object):
     def current_version(self):
         if self.current_schema:
             return self.current_schema.current_version(self.name)
+
+    def as_dict(self):
+        d = dict()
+        d["subject_name"] = self.name
+        if self.config:
+            d["config"] = self.config
+        if self.current_schema:
+            cur_sch = self.current_schema
+            d["current_schema_version"] = cur_sch.current_version(self.name)
+            d["current_schema_sha256_id"] = cur_sch.sha256_id
+            d["current_schema_md5_id"] = cur_sch.md5_id
+        return d
