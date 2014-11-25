@@ -10,7 +10,7 @@ are meant to be mounted by an umbrella instance of TASRApp.  This
 import avro.schema
 import bottle
 import tasr.app_wsgi
-from tasr.headers import SubjectHeaderBot, SchemaHeaderBot
+from tasr.headers import SchemaHeaderBot
 
 
 ##############################################################################
@@ -37,12 +37,13 @@ def schema_for_id_str(base64_id_str=None):
     standard Avro (1124-type) schema repository.  It is only really possible
     with the multi-type ID.
     '''
-    tasr.app_wsgi.abort_if_value_bad(base64_id_str, 'base64 ID string')
+    if base64_id_str == None or base64_id_str == '':
+        TASR_ID_APP.abort(400, 'Missing base64 ID string.')
     reg_schema = TASR_ID_APP.ASR.get_schema_for_id_str(base64_id_str)
     if reg_schema:
-        return tasr.app_wsgi.schema_response(reg_schema)
+        return TASR_ID_APP.schema_response(reg_schema)
     # return nothing if there is no schema registered for the topic name
-    tasr.app_wsgi.abort(404, 'No schema registered with id %s' % base64_id_str)
+    TASR_ID_APP.abort(404, 'No schema registered with id %s' % base64_id_str)
 
 # TODO: Add /<id>/meta to get metadata as JSON?
 
@@ -60,13 +61,17 @@ def schema_for_schema_str():
     request were made with that ID string.  This means the response headers
     will be like the ones for schemas retrieved by ID string.
     '''
-    tasr.app_wsgi.abort_if_content_type_not_json(bottle.request)
-    tasr.app_wsgi.abort_if_body_empty(bottle.request)
+    c_type = str(bottle.request.content_type).split(';')[0].strip()
+    if not tasr.app_wsgi.is_json_type(c_type):
+        TASR_SCHEMA_APP.abort(406, 'Content-Type not JSON.')
+    bod = bottle.request.body.getvalue()
+    if bod == None or bod == '':
+        TASR_SCHEMA_APP.abort(400, 'Expected a non-empty request body.')
     try:
         schema_str = bottle.request.body.getvalue()
         reg_schema = TASR_SCHEMA_APP.ASR.get_schema_for_schema_str(schema_str)
         if reg_schema:
-            return tasr.app_wsgi.schema_response(reg_schema)
+            return TASR_SCHEMA_APP.schema_response(reg_schema)
 
         # For unregistered schemas, the status is a 404 and the return body is
         # empty, but we add the headers with the MD5 and SHA256 IDs so the
@@ -76,16 +81,27 @@ def schema_for_schema_str():
         unreg_schema.schema_str = schema_str
         SchemaHeaderBot(bottle.response, unreg_schema).set_ids()
         bottle.response.status = 404
-        bottle.response.content_type = 'text/plain'
-        tasr.app_wsgi.log_request(404)
+        errd = TASR_SCHEMA_APP.error_dict(404, 'Schema not registered.')
+        return TASR_SCHEMA_APP.object_response(None, errd)
     except avro.schema.SchemaParseException:
-        tasr.app_wsgi.abort(400, 'Invalid schema.  Failed to consider.')
+        TASR_SCHEMA_APP.abort(400, 'Invalid schema.  Failed to consider.')
 
 
 ##############################################################################
 # /collection app - get lists of objects in the repo
 ##############################################################################
 TASR_COLLECTION_APP = tasr.app_wsgi.TASRApp()
+
+
+def subject_list_response(sub_list):
+    '''Given a list of subjects (Group objects), construct a response with all
+    the subjects represented.'''
+    hbot = tasr.headers.SubjectHeaderBot(bottle.response)
+    s_dicts = dict()
+    for subject in sub_list:
+        hbot.add_subject_name(subject)
+        s_dicts[subject.name] = subject.as_dict()
+    return TASR_COLLECTION_APP.object_response(sub_list, s_dicts)
 
 
 @TASR_COLLECTION_APP.get('/subjects/all')
@@ -99,11 +115,8 @@ def all_subject_names():
     If text/json or application/json is specified, the return body will be a
     JSON document containing current metadata for each subject.
     '''
-    hbot = tasr.headers.SubjectHeaderBot(bottle.response)
     subjects = TASR_COLLECTION_APP.ASR.get_all_subjects()
-    for subject in subjects:
-        hbot.add_subject_name(subject)
-    return tasr.app_wsgi.subjects_response(subjects)
+    return subject_list_response(subjects)
 
 
 @TASR_COLLECTION_APP.get('/subjects/active')
@@ -112,8 +125,5 @@ def active_subject_names():
     line (using '\n' as delimiters).  We add X-TASR headers with the subject
     names as well.
     '''
-    hbot = SubjectHeaderBot(bottle.response)
     subjects = TASR_COLLECTION_APP.ASR.get_active_subjects()
-    for subject in subjects:
-        hbot.add_subject_name(subject)
-    return tasr.app_wsgi.subjects_response(subjects)
+    return subject_list_response(subjects)

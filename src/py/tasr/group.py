@@ -69,3 +69,12 @@ class Group(object):
             d["current_schema_sha256_id"] = cur_sch.sha256_id
             d["current_schema_md5_id"] = cur_sch.md5_id
         return d
+
+    def __repr__(self):
+        return u'<%s>:"%s"' % (self.__class__.__name__, self.name)
+
+    def __str__(self):
+        return self.name
+
+
+

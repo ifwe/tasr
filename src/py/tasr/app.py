@@ -32,8 +32,6 @@ Our default settings look like this:
 For running the app in standalone mode, please see the app_standalone module.
 '''
 import tasr.app_wsgi
-from bottle import request
-#from tasr.app_wsgi import TASRApp
 from tasr.app_core import TASR_COLLECTION_APP, TASR_ID_APP, TASR_SCHEMA_APP
 from tasr.app_topic import TASR_TOPIC_APP
 from tasr.app_subject import TASR_SUBJECT_APP
@@ -46,10 +44,3 @@ TASR_APP.mount('/tasr/id', TASR_ID_APP)
 TASR_APP.mount('/tasr/schema', TASR_SCHEMA_APP)
 TASR_APP.mount('/tasr/topic', TASR_TOPIC_APP)
 TASR_APP.mount('/tasr/subject', TASR_SUBJECT_APP)
-
-
-@TASR_APP.error(404)
-def error404(error):
-    if tasr.app_wsgi.accept_json(request):
-        return tasr.app_wsgi.json_body(error)
-    return str(error)

@@ -223,8 +223,6 @@ class RedisSchemaRepository(object):
         '''The HGETALL Redis command returns a "[<name0>,<value0>,<name1>, ...]
         pair list, which we want to turn into a dict in several cases.
         '''
-        if not vlist:
-            return None
         if not len(vlist) % 2 == 0:
             raise Exception('Must have an even number of values in the list.')
         idx = 0
