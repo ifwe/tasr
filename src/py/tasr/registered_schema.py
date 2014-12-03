@@ -10,6 +10,8 @@ import struct
 import base64
 import binascii
 import avro.schema
+import collections
+import json
 
 MD5_BYTES = 16
 SHA256_BYTES = 32
@@ -67,10 +69,13 @@ class SchemaMetadata(object):
         return meta_dict
 
     def group_version(self, group_name):
+        '''Convenience accessor for the version number of a specified group.'''
         if group_name in self.gv_dict.keys():
             return int(self.gv_dict[group_name])
 
     def group_timestamp(self, group_name):
+        '''Convenience accessor for the registration timestamp for a specified
+        group.'''
         if group_name in self.ts_dict.keys():
             return long(self.ts_dict[group_name])
 
@@ -143,8 +148,7 @@ class RegisteredSchema(object):
 
     @property
     def canonical_schema_str(self):
-        '''Not much normalization as of yet...
-        '''
+        '''The split() and join() normalizes whitespace.'''
         if not self.schema_str:
             return None
         elems = self.schema_str.split()
@@ -245,7 +249,7 @@ class RegisteredSchema(object):
         '''The retrieval of the canonical str should do a validation.  So, if
         it comes back as None, it is either missing or bad.
         '''
-        return self.canonical_schema_str != None
+        return self.schema_str != None
 
     def current_version(self, group_name):
         '''A convenience method to get the current version for a group
@@ -287,18 +291,60 @@ class RegisteredSchema(object):
         return False
 
 
-class RegisteredAvroSchema(RegisteredSchema):
-    '''Adds an Avro schema validation function.
+def ordered_object(obj):
+    '''A recursive method to alpha-order potentially nested collection objects
+    in a repeatable way.  Basically, wherever there is a non-ordered collection
+    order it by the alpha order of the keys.  Dict objects become OrderedDict
+    objects.  Lists remain lists (and order is preserved).
+
+    We use this here to help with canonicalization of Avro schemas.
     '''
+    if obj and hasattr(obj, '__iter__'):
+        if isinstance(obj, dict):
+            # for a dict, we want to alpha order by key
+            odict = collections.OrderedDict()
+            for key in sorted(obj.keys()):
+                # recurse to order the value object
+                odict[key] = ordered_object(obj[key])
+            return odict
+        elif isinstance(obj, list):
+            processed_list = []
+            for elem in obj:
+                # recurse to order the value object
+                processed_list.append(ordered_object(elem))
+            return processed_list
+    # if the object is a leaf, just return it as is
+    return obj
+
+
+class RegisteredAvroSchema(RegisteredSchema):
+    '''Adds an Avro schema validation function.'''
     def __init__(self):
         super(RegisteredAvroSchema, self).__init__()
+        self.schema = None
+        self.ordered = None
+
+    @property
+    def canonical_schema_str(self):
+        if not self.ordered and self.schema_str:
+            self.ordered = ordered_object(json.loads(self.schema_str))
+        return json.dumps(self.ordered) if self.ordered else None
 
     def validate_schema_str(self):
         if not super(RegisteredAvroSchema, self).validate_schema_str():
             return False
 
         # a parse exception should bubble up, so don't catch it here
-        avro.schema.parse(self.canonical_schema_str)
+        self.schema = avro.schema.parse(self.canonical_schema_str)
 
         # add additional checks?
         return True
+
+    @staticmethod
+    def is_valid_avro_schema(schema_str):
+        test_schema = RegisteredAvroSchema()
+        test_schema.schema_str = schema_str
+        try:
+            return test_schema.validate_schema_str()
+        except:
+            return False

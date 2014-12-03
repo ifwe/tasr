@@ -63,16 +63,26 @@ def get_subject(subject_name):
     return subject
 
 
-def request_form_to_dict():
-    '''Grabs a form from the request and converts it into a dict.  If multiple
-    values are passed for a given key, abort on a 400 status code.'''
+def request_data_to_dict():
+    '''Extracts a dict from the request.  If the Content-Type is a JSON type,
+    we expect a valid, parseable JSON body.  Otherwise, we expect an HTML form.
+    If a form is passed, multiple values per parameter are not allowed, with a
+    400 status code thrown when they occur.'''
     dct = dict()
-    for key in bottle.request.forms.keys():
-        plist = bottle.request.forms.getall(key)
-        if len(plist) > 1:
-            TASR_SUBJECT_APP.abort(400, 'Multiple values for %s key.' % key)
-        if len(plist) == 1:
-            dct[key] = plist[0]
+    if tasr.app_wsgi.is_json_type(bottle.request.content_type):
+        try:
+            json_body = bottle.request.body.getvalue()
+            dct = json.loads(json_body)
+        except:
+            pass
+    else:
+        # by default assume a HTML form has been passed with the request
+        for key in bottle.request.forms.keys():
+            plist = bottle.request.forms.getall(key)
+            if len(plist) > 1:
+                TASR_SUBJECT_APP.abort(400, 'Multiple values for %s key.' % key)
+            if len(plist) == 1:
+                dct[key] = plist[0]
     return dct
 
 
@@ -117,8 +127,10 @@ def register_subject(subject_name=None):
     config map conflicts with a pre-existing one for the subject, a 409
     (conflict) status will be returned.
     '''
-    config_dict = request_form_to_dict()
-    subject = get_subject(subject_name)
+    config_dict = request_data_to_dict()
+
+    abort_if_subject_bad(subject_name)
+    subject = TASR_SUBJECT_APP.ASR.lookup_subject(subject_name)
     if subject:
         # subject already there, so check for conflicts
         if subject.config == config_dict:
@@ -151,7 +163,7 @@ def subject_config(subject_name=None):
 @TASR_SUBJECT_APP.post('/<subject_name>/config')
 def update_subject_config(subject_name=None):
     '''Replace the config dict for a subject.'''
-    config_dict = request_form_to_dict()
+    config_dict = request_data_to_dict()
     subject = get_subject(subject_name)
     if subject.config != config_dict:
         TASR_SUBJECT_APP.ASR.update_subject_config(subject_name, config_dict)
@@ -217,7 +229,7 @@ def all_subject_schemas(subject_name=None):
     for schema in asr.get_latest_schema_versions_for_group(subject_name, -1):
         hbot.add_subject_sha256_id_to_list(schema.sha256_id)
         schema_list.append(schema.canonical_schema_str)
-        jobj_list.append(json.loads(schema.canonical_schema_str))
+        jobj_list.append(schema.ordered)
     return TASR_SUBJECT_APP.object_response(schema_list, jobj_list)
 
 
@@ -237,6 +249,8 @@ def register_subject_schema(subject_name=None):
             bottle.response.status = 201
         return TASR_SUBJECT_APP.schema_response(reg_schema)
     except avro.schema.SchemaParseException:
+        TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
+    except ValueError:
         TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
 
 
@@ -283,6 +297,8 @@ def lookup_by_schema_str(subject_name=None):
         bottle.response.status = 404
         # TODO: should we return an object with the IDs here if JSON accepted?
     except avro.schema.SchemaParseException:
+        TASR_SUBJECT_APP.abort(400, 'Invalid schema.  Failed to consider.')
+    except ValueError:
         TASR_SUBJECT_APP.abort(400, 'Invalid schema.  Failed to consider.')
 
 

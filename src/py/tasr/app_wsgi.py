@@ -95,7 +95,7 @@ class TASRApp(bottle.Bottle):
         elif not obj == None:
             # if we're not returning JSON and obj is not None, return as lines
             buff = StringIO.StringIO()
-            if obj.__iter__:
+            if hasattr(obj, '__iter__'):
                 for item in obj:
                     buff.write('%s\n' % item)
             else:
@@ -135,9 +135,8 @@ class TASRApp(bottle.Bottle):
         bottle.response.content_type = rctype
         bot = tasr.headers.SchemaHeaderBot(bottle.response, reg_schema)
         bot.standard_headers()
-        jobj = json.loads(reg_schema.canonical_schema_str)
         return self.object_response(reg_schema.canonical_schema_str,
-                                    jobj, rctype)
+                                    reg_schema.ordered, rctype)
 
 
 def log_request(code=200):
@@ -165,7 +164,7 @@ def is_pretty():
 
 def json_body(ob):
     if is_pretty():
-        j = json.dumps(ob, sort_keys=False, indent=4,
+        j = json.dumps(ob, sort_keys=False, indent=3,
                        separators=(',', ': '))
         return '%s\n' % j
     else:

@@ -7,7 +7,6 @@ Created on May 7, 2014
 from client_test import TestTASRAppClient
 
 import unittest
-import tasr.app
 import tasr.client_sv
 import copy
 import httmock
@@ -22,14 +21,14 @@ class TestTASRClientSVObject(TestTASRAppClient):
         self.avsc_file = self.get_fixture_file(fix_rel_path, "r")
         self.schema_str = self.avsc_file.read()
         # client settings
-        self.host = 'localhost'  # should match netloc below
-        self.port = 8080         # should match netloc below
+        self.host = self.app.config.host  # should match netloc below
+        self.port = self.app.config.port  # should match netloc below
         # clear out all the keys before beginning -- careful!
-        tasr.app.ASR.redis.flushdb()
+        self.app.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        tasr.app.ASR.redis.flushdb()
+        self.app.ASR.redis.flushdb()
 
     def obj_register_subject_skeleton(self, config_dict=None):
         '''TASRClientSV.register_subject() - skeleton test'''
@@ -221,9 +220,11 @@ class TestTASRClientSVObject(TestTASRAppClient):
         try:
             bad_schema = '%s }' % self.schema_str
             self.obj_register_schema_skeleton(bad_schema)
-            self.fail('should have thrown a TASRError')
-        except tasr.client_sv.TASRError as te:
-            self.assertTrue(te, 'Missing TASRError')
+            self.fail('should have thrown a ValueError')
+        except tasr.client_sv.TASRError:
+            self.fail('should have thrown a ValueError')
+        except ValueError:
+            pass
 
     def test_obj_reg_and_rereg(self):
         '''TASRClientSV.register_schema() - multi calls, same schema'''

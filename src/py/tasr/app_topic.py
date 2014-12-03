@@ -67,10 +67,11 @@ def register_topic_schema(topic_name=None):
                                      topic_name).legacy_headers()
         if reg_schema.created:
             bottle.response.status = 201
-        jobj = json.loads(reg_schema.canonical_schema_str)
-        return TASR_TOPIC_APP.object_response(reg_schema, jobj,
+        #jobj = json.loads(reg_schema.canonical_schema_str)
+        return TASR_TOPIC_APP.object_response(reg_schema.canonical_schema_str,
+                                              reg_schema.ordered,
                                               'application/json')
-    except avro.schema.SchemaParseException:
+    except ValueError:
         TASR_TOPIC_APP.abort(400, 'Invalid.  Failed to register_schema.')
 
 
@@ -86,8 +87,9 @@ def latest_schema_for_topic(topic_name=None):
         # we leave out the topic_name to get back ver & ts for all assoc topics
         tasr.headers.SchemaHeaderBot(bottle.response,
                                      reg_schema).legacy_headers()
-        jobj = json.loads(reg_schema.canonical_schema_str)
-        return TASR_TOPIC_APP.object_response(reg_schema, jobj,
+        #jobj = json.loads(reg_schema.canonical_schema_str)
+        return TASR_TOPIC_APP.object_response(reg_schema.canonical_schema_str,
+                                              reg_schema.ordered,
                                               'application/json')
     # return nothing if there is no schema registered for the group name
     TASR_TOPIC_APP.abort(404, 'No schema for topic %s.' % topic_name)
@@ -112,8 +114,9 @@ def schema_for_topic_and_version(topic_name=None, version=None):
         # we leave out the topic_name to get back ver & ts for all assoc topics
         tasr.headers.SchemaHeaderBot(bottle.response,
                                      reg_schema).legacy_headers()
-        jobj = json.loads(reg_schema.canonical_schema_str)
-        return TASR_TOPIC_APP.object_response(reg_schema, jobj,
+        #jobj = json.loads(reg_schema.canonical_schema_str)
+        return TASR_TOPIC_APP.object_response(reg_schema.canonical_schema_str,
+                                              reg_schema.ordered,
                                               'application/json')
     # return nothing if there is no schema registered for the group name
     TASR_TOPIC_APP.abort(404, ('No version %s registered for topic %s.' %

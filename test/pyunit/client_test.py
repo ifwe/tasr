@@ -14,6 +14,10 @@ from requests.packages.urllib3.response import HTTPResponse
 import httmock
 from webtest import TestApp, TestRequest
 
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
+HOST_PORT = r'%s:%s' % (APP.config.host, APP.config.port)
+
 
 class TestTASRAppClient(TASRTestCase):
     '''
@@ -22,9 +26,10 @@ class TestTASRAppClient(TASRTestCase):
     '''
 
     def setUp(self):
-        self.tasr = TestApp(tasr.app.TASR_APP)
+        self.app = APP
+        self.tasr = TestApp(APP)
 
-    @httmock.urlmatch(netloc=r'localhost:8080')
+    @httmock.urlmatch(netloc=HOST_PORT)
     def route_to_testapp(self, url, requests_req):
         '''This is some tricky stuff.  To test the client methods, we need the
         responses package calls to route to our webtest TestApp WSGI wrapper.

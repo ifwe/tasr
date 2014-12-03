@@ -7,7 +7,6 @@ Created on May 7, 2014
 from client_test import TestTASRAppClient
 
 import unittest
-import tasr.app
 import tasr.client_sv
 import copy
 import httmock
@@ -22,14 +21,14 @@ class TestTASRClientSVMethods(TestTASRAppClient):
         self.avsc_file = self.get_fixture_file(fix_rel_path, "r")
         self.schema_str = self.avsc_file.read()
         # client settings
-        self.host = 'localhost'  # should match netloc below
-        self.port = 8080         # should match netloc below
+        self.host = self.app.config.host  # should match netloc below
+        self.port = self.app.config.port  # should match netloc below
         # clear out all the keys before beginning -- careful!
-        tasr.app.ASR.redis.flushdb()
+        self.app.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        tasr.app.ASR.redis.flushdb()
+        self.app.ASR.redis.flushdb()
 
     def bare_register_subject_skeleton(self, config_dict=None):
         '''register_subject() - skeleton test'''
@@ -230,9 +229,11 @@ class TestTASRClientSVMethods(TestTASRAppClient):
         try:
             bad_schema = '%s }' % self.schema_str
             self.bare_register_schema_skeleton(bad_schema)
-            self.fail('should have thrown a TASRError')
+            self.fail('should have thrown a ValueError')
         except tasr.client_sv.TASRError as te:
-            self.assertTrue(te, 'Missing TASRError')
+            self.fail('should have thrown a ValueError')
+        except ValueError:
+            pass
 
     def test_bare_reg_and_rereg(self):
         '''register_schema_for_topic() - multi calls, same schema'''

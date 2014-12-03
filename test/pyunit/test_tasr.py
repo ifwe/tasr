@@ -7,15 +7,20 @@ Created on Apr 8, 2014
 from tasr_test import TASRTestCase
 
 import unittest
-import avro.schema
 import time
+import tasr.app
 from tasr import AvroSchemaRepository
 from tasr.group import InvalidGroupException
+
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
+HOST_PORT = r'%s:%s' % (APP.config.host, APP.config.port)
 
 try:
     import redis
     # note we use port 5379 (instead of 6379) in prod, so we test against that
-    R_TEST = redis.StrictRedis(host='localhost', port=5379, db=0)
+    R_TEST = redis.StrictRedis(host=APP.config.redis_host,
+                               port=APP.config.redis_port, db=0)
     R_TEST.keys('no_match_pattern')  # should throw exception if no redis
     HASR_LOCAL_REDIS = True
 except ImportError:
@@ -32,11 +37,13 @@ class TestTASR(TASRTestCase):
         self.schema_version = 0
         self.asr = None
         if HASR_LOCAL_REDIS:
-            self.asr = AvroSchemaRepository(host='localhost', port=5379)
+            self.asr = AvroSchemaRepository(host=APP.config.redis_host,
+                                            port=APP.config.redis_port)
             # clear out all the keys before beginning -- careful!
             self.asr.redis.flushdb()
         else:
-            self.fail(u'Redis not available on localhost:5379')
+            self.fail(u'No Redis on %s:%s' % (APP.config.redis_host,
+                                              APP.config.redis_port))
 
     def tearDown(self):
         if HASR_LOCAL_REDIS:
@@ -75,8 +82,8 @@ class TestTASR(TASRTestCase):
         '''register_schema() - error case'''
         try:
             self.asr.register_schema(self.event_type, "%s }" % self.schema_str)
-            self.fail(u'Should have thrown a SchemaParseException.')
-        except avro.schema.SchemaParseException:
+            self.fail(u'Should have raised a ValueError.')
+        except ValueError:
             pass
 
     def test_register_fail_for_invalid_subject(self):
@@ -196,8 +203,8 @@ class TestTASR(TASRTestCase):
         self.asr.register_schema(self.event_type, self.schema_str)
         try:
             self.asr.get_schema_for_schema_str("%s }" % self.schema_str)
-            self.fail(u'Should have got raised a SchemaParseException')
-        except avro.schema.SchemaParseException:
+            self.fail(u'Should have got raised a ValueError')
+        except ValueError:
             pass
 
     def test_get_latest_versions_for_topic(self):

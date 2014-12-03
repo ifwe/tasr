@@ -107,8 +107,9 @@ def register_schema(topic_name, schema_str, host=TASR_HOST,
     '''
     url = 'http://%s:%s/tasr/topic/%s' % (host, port, topic_name)
     headers = {'content-type': 'application/json; charset=utf8', }
-    return reg_schema_from_url(url, method='PUT', data=schema_str,
-                               headers=headers, timeout=timeout)
+    rs = reg_schema_from_url(url, method='PUT', data=schema_str,
+                             headers=headers, timeout=timeout)
+    return rs
 
 
 def get_latest_schema(topic_name, host=TASR_HOST,

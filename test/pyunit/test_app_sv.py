@@ -13,6 +13,10 @@ import tasr.app
 import StringIO
 
 
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
+
+
 class TestTASRAppSVAPI(TASRTestCase):
     '''These tests check that the TASR S+V REST API, expected by the Avro-1124
     repo code.  This does not check the TASR native API calls.
@@ -23,27 +27,28 @@ class TestTASRAppSVAPI(TASRTestCase):
         fix_rel_path = "schemas/%s.avsc" % (self.event_type)
         self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
         self.schema_str = self.avsc_file.read()
-        self.tasr_app = TestApp(tasr.app.TASR_APP)
-        self.url_prefix = 'http://localhost:8080/tasr/subject'
-        self.subject_url = '%s/%s' % (self.url_prefix, self.event_type)
+        self.tasr_app = TestApp(APP)
+        self.url_prefix = 'http://%s:%s/tasr' % (APP.config.host,
+                                                 APP.config.port)
+        self.subject_url = '%s/subject/%s' % (self.url_prefix, self.event_type)
         self.content_type = 'application/json; charset=utf8'
         # clear out all the keys before beginning -- careful!
-        tasr.app.ASR.redis.flushdb()
+        APP.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        tasr.app.ASR.redis.flushdb()
+        APP.ASR.redis.flushdb()
 
     def abort_diff_status(self, resp, code):
         self.assertEqual(code, resp.status_code,
                          u'Non-%s status code: %s' % (code, resp.status_code))
 
     def register_subject(self, subject_name):
-        url = '%s/%s' % (self.url_prefix, subject_name)
+        url = '%s/subject/%s' % (self.url_prefix, subject_name)
         return self.tasr_app.put(url, {'subject_name': subject_name})
 
     def register_schema(self, subject_name, schema_str, expect_errors=False):
-        reg_url = '%s/%s/register' % (self.url_prefix, subject_name)
+        reg_url = '%s/subject/%s/register' % (self.url_prefix, subject_name)
         return self.tasr_app.request(reg_url, method='PUT',
                                      content_type=self.content_type,
                                      expect_errors=expect_errors,
@@ -179,7 +184,8 @@ class TestTASRAppSVAPI(TASRTestCase):
         alt_subject_name = 'bob'
         self.register_subject(alt_subject_name)
         # now get all and check the headers
-        resp = self.tasr_app.request(self.url_prefix, method='GET')
+        resp = self.tasr_app.request('%s/subject' % self.url_prefix,
+                                     method='GET')
         self.abort_diff_status(resp, 200)
         meta_dict = SubjectHeaderBot.extract_metadata(resp)
 
@@ -201,14 +207,15 @@ class TestTASRAppSVAPI(TASRTestCase):
                              'Expected group_names in body to match headers.')
 
     def test_active_subjects(self):
-        '''GET /tasr/active_subjects - gets _active_ subjects (that is, ones
-        with at least one schema), as expected'''
+        '''GET /tasr/collection/subjects/active - gets _active_ subjects (that
+        is, ones with at least one schema), as expected'''
         # reg two vers for target subject and one for an alt subject
         self.register_subject(self.event_type)
         alt_subject_name = 'bob'
         self.register_subject(alt_subject_name)
         # now get all and check the headers
-        resp = self.tasr_app.request(self.url_prefix, method='GET')
+        all_url = "%s/collection/subjects/all" % self.url_prefix
+        resp = self.tasr_app.request(all_url, method='GET')
         self.abort_diff_status(resp, 200)
         meta_dict = SubjectHeaderBot.extract_metadata(resp)
         # we should have a GroupMetadata object for each group in the headers
@@ -218,8 +225,8 @@ class TestTASRAppSVAPI(TASRTestCase):
             self.assertEqual(sub_name, subj.name, 'bad subject name')
 
         # now get the ACTIVE subjects, which should be empty so far
-        url = 'http://localhost:8080/tasr/active_subjects'
-        resp = self.tasr_app.request(url, method='GET')
+        active_url = "%s/collection/subjects/active" % self.url_prefix
+        resp = self.tasr_app.request(active_url, method='GET')
         self.abort_diff_status(resp, 200)
         meta_dict = SubjectHeaderBot.extract_metadata(resp)
         # we should have no GroupMetadata objects
@@ -231,7 +238,7 @@ class TestTASRAppSVAPI(TASRTestCase):
         self.abort_diff_status(resp, 201)
 
         # the get_all should be unchanged, the get_active should have one
-        resp = self.tasr_app.request(self.url_prefix, method='GET')
+        resp = self.tasr_app.request(all_url, method='GET')
         self.abort_diff_status(resp, 200)
         meta_dict = SubjectHeaderBot.extract_metadata(resp)
         # we should have a GroupMetadata object for each group in the headers
@@ -241,8 +248,7 @@ class TestTASRAppSVAPI(TASRTestCase):
             self.assertEqual(sub_name, subj.name, 'bad subject name')
 
         # now get the ACTIVE subjects, which should be empty so far
-        url = 'http://localhost:8080/tasr/active_subjects'
-        resp = self.tasr_app.request(url, method='GET')
+        resp = self.tasr_app.request(active_url, method='GET')
         self.abort_diff_status(resp, 200)
         meta_dict = SubjectHeaderBot.extract_metadata(resp)
         # we should have a GroupMetadata object for one group in the headers

@@ -11,14 +11,17 @@ module.
 '''
 
 import requests
+import tasr.app
 import webtest
 import StringIO
 from tasr.client import TASRError, reg_schema_from_url
 from tasr.registered_schema import RegisteredAvroSchema
 from tasr.headers import SubjectHeaderBot
 
-TASR_HOST = 'localhost'
-TASR_PORT = 8080
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
+TASR_HOST = APP.config.host
+TASR_PORT = APP.config.port
 TIMEOUT = 2  # seconds
 
 
@@ -36,7 +39,8 @@ def register_subject(subject_name, config_dict=None, host=TASR_HOST,
     Returns a GroupMetadata object on success.
     '''
     url = 'http://%s:%s/tasr/subject/%s' % (host, port, subject_name)
-    resp = requests.put(url, data=config_dict, timeout=timeout)
+    hdrs = {'content-type': 'application/json; charset=utf8', }
+    resp = requests.put(url, data=config_dict, headers=hdrs, timeout=timeout)
     if resp == None:
         raise TASRError('Timeout for register subject request.')
     if not resp.status_code in [200, 201]:
@@ -79,8 +83,10 @@ def get_subject_config(subject_name, host=TASR_HOST, port=TASR_PORT,
     buff = StringIO.StringIO(resp.content)
     config_dict = dict()
     for line in buff:
-        key, value = line.strip().split('=', 1)
-        config_dict[key] = value
+        if line and line.strip():
+            # this ensures we don't try and split empty lines
+            key, value = line.strip().split('=', 1)
+            config_dict[key] = value
     buff.close()
     return config_dict
 
@@ -102,8 +108,10 @@ def update_subject_config(subject_name, config_dict,
     buff = StringIO.StringIO(resp.content)
     config_dict = dict()
     for line in buff:
-        key, value = line.strip().split('=', 1)
-        config_dict[key] = value
+        if line and line.strip():
+            # this ensures we don't try and split empty lines
+            key, value = line.strip().split('=', 1)
+            config_dict[key] = value
     buff.close()
     return config_dict
 
@@ -129,12 +137,12 @@ def is_subject_integral(subject_name, host=TASR_HOST,
 
 
 def get_active_subject_names(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
-    ''' GET /tasr/active_subjects
+    ''' GET /tasr/collection/subjects/active
     Retrieves all the active subject names (ones with schemas), both as X-TASR
     header fields and as plain text, one per line, in the response body.  This
     method returns a list of subject name strings.
     '''
-    url = 'http://%s:%s/tasr/active_subjects' % (host, port)
+    url = 'http://%s:%s/tasr/collection/subjects/active' % (host, port)
     resp = requests.get(url, timeout=timeout)
     if resp == None:
         raise TASRError('Timeout for get active subjects request.')
@@ -156,12 +164,12 @@ def get_active_subject_names(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
 
 
 def get_all_subject_names(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
-    ''' GET /tasr/subject
+    ''' GET /tasr/collection/subjects/all
     Retrieves all the registered subject names, both as X-TASR header fields
     and as plain text, one per line, in the response body.  This method returns
     a list of subject name strings.
     '''
-    url = 'http://%s:%s/tasr/subject' % (host, port)
+    url = 'http://%s:%s/tasr/collection/subjects/all' % (host, port)
     resp = requests.get(url, timeout=timeout)
     if resp == None:
         raise TASRError('Timeout for get all subjects request.')

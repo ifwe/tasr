@@ -7,10 +7,12 @@ Created on May 7, 2014
 from client_test import TestTASRAppClient
 
 import unittest
-import tasr.app
 import tasr.client
 import copy
 import httmock
+
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
 
 
 class TestTASRClientObject(TestTASRAppClient):
@@ -25,11 +27,11 @@ class TestTASRClientObject(TestTASRAppClient):
         self.host = 'localhost'  # should match netloc below
         self.port = 8080         # should match netloc below
         # clear out all the keys before beginning -- careful!
-        tasr.app.ASR.redis.flushdb()
+        APP.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        tasr.app.ASR.redis.flushdb()
+        APP.ASR.redis.flushdb()
 
     ########################################################################
     # registration tests
@@ -69,9 +71,11 @@ class TestTASRClientObject(TestTASRAppClient):
         try:
             bad_schema = '%s }' % self.schema_str
             self.obj_register_schema_skeleton(bad_schema)
-            self.fail('should have thrown a TASRError')
-        except tasr.client.TASRError as te:
-            self.assertTrue(te, 'Missing TASRError')
+            self.fail('should have thrown a ValueError')
+        except tasr.client.TASRError:
+            self.fail('should have thrown a ValueError')
+        except ValueError:
+            pass
 
     def test_obj_reg_and_rereg(self):
         '''TASRClient.register_schema() - multi calls, same schema'''

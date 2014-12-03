@@ -9,8 +9,11 @@ from tasr.headers import SchemaHeaderBot, SubjectHeaderBot
 
 import unittest
 from webtest import TestApp
-import tasr.app
 import StringIO
+import tasr.app
+
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
 
 
 class TestTASRAppNativeAPI(TASRTestCase):
@@ -23,16 +26,17 @@ class TestTASRAppNativeAPI(TASRTestCase):
         fix_rel_path = "schemas/%s.avsc" % (self.event_type)
         self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
         self.schema_str = self.avsc_file.read()
-        self.tasr_app = TestApp(tasr.app.TASR_APP)
-        self.url_prefix = 'http://localhost:8080/tasr'
+        self.tasr_app = TestApp(APP)
+        self.url_prefix = 'http://%s:%s/tasr' % (APP.config.host,
+                                                 APP.config.port)
         self.topic_url = '%s/topic/%s' % (self.url_prefix, self.event_type)
         self.content_type = 'application/json; charset=utf8'
         # clear out all the keys before beginning -- careful!
-        tasr.app.ASR.redis.flushdb()
+        APP.ASR.redis.flushdb()
 
     def tearDown(self):
         # this clears out redis after each test -- careful!
-        tasr.app.ASR.redis.flushdb()
+        APP.ASR.redis.flushdb()
 
     def abort_diff_status(self, resp, code):
         self.assertEqual(code, resp.status_code,
