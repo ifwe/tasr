@@ -126,7 +126,7 @@ class TASRApp(bottle.Bottle):
                 prop_list.append('%s=%s\n' % (key, val))
         return self.object_response(prop_list, subject.config)
 
-    def schema_response(self, reg_schema):
+    def schema_response(self, reg_schema, subject_name=None):
         '''Return the schema JSON for a registered schema.  The body will
         _ALWAYS_ be JSON, even if the client does not specifically accept it.
         Standard schema headers.
@@ -134,7 +134,7 @@ class TASRApp(bottle.Bottle):
         rctype = response_content_type(default_type='application/json')
         bottle.response.content_type = rctype
         bot = tasr.headers.SchemaHeaderBot(bottle.response, reg_schema)
-        bot.standard_headers()
+        bot.standard_headers(subject_name=subject_name)
         return self.object_response(reg_schema.canonical_schema_str,
                                     reg_schema.ordered, rctype)
 

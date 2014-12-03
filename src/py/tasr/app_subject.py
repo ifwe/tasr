@@ -247,7 +247,7 @@ def register_subject_schema(subject_name=None):
             TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
         if reg_schema.created:
             bottle.response.status = 201
-        return TASR_SUBJECT_APP.schema_response(reg_schema)
+        return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
     except avro.schema.SchemaParseException:
         TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
     except ValueError:
@@ -285,7 +285,7 @@ def lookup_by_schema_str(subject_name=None):
         reg_schema = TASR_SUBJECT_APP.ASR.get_schema_for_schema_str(schema_str)
         if reg_schema and subject_name in reg_schema.group_names:
             hbot.standard_headers(reg_schema, subject_name)
-            return TASR_SUBJECT_APP.schema_response(reg_schema)
+            return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
 
         # For unregistered schemas, the status is a 404 and the return body is
         # empty, but we add the headers with the MD5 and SHA256 IDs so the
@@ -321,7 +321,7 @@ def lookup_by_subject_and_version(subject_name=None, version=None):
     here to be the expected one.
     '''
     reg_schema.gv_dict[subject_name] = version
-    return TASR_SUBJECT_APP.schema_response(reg_schema)
+    return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
 
 
 @TASR_SUBJECT_APP.get('/<subject_name>/id/<id_str:path>')
@@ -336,7 +336,7 @@ def lookup_by_subject_and_id_str(subject_name=None, id_str=None):
         msg = ('No schema with a multi-type ID %s registered for subject %s.' %
                (id_str, subject_name))
         TASR_SUBJECT_APP.abort(404, msg)
-    return TASR_SUBJECT_APP.schema_response(reg_schema)
+    return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
 
 
 @TASR_SUBJECT_APP.get('/<subject_name>/latest')
@@ -349,4 +349,4 @@ def lookup_latest(subject_name=None):
     if not reg_schema:
         msg = 'No schema registered for subject %s.' % subject_name
         TASR_SUBJECT_APP.abort(404, msg)
-    return TASR_SUBJECT_APP.schema_response(reg_schema)
+    return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)

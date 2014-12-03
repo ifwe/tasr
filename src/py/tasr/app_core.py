@@ -97,11 +97,11 @@ def subject_list_response(sub_list):
     '''Given a list of subjects (Group objects), construct a response with all
     the subjects represented.'''
     hbot = tasr.headers.SubjectHeaderBot(bottle.response)
-    #s_dicts = dict()
+    s_dicts = dict()
     for subject in sub_list:
         hbot.add_subject_name(subject)
-    #    s_dicts[subject.name] = subject.as_dict()
-    return TASR_COLLECTION_APP.object_response(sub_list)
+        s_dicts[subject.name] = subject.as_dict()
+    return TASR_COLLECTION_APP.object_response(sub_list, s_dicts)
 
 
 @TASR_COLLECTION_APP.get('/subjects/all')

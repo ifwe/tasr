@@ -68,6 +68,7 @@ class Group(object):
             d["current_schema_version"] = cur_sch.current_version(self.name)
             d["current_schema_sha256_id"] = cur_sch.sha256_id
             d["current_schema_md5_id"] = cur_sch.md5_id
+            d["current_schema_timestamp"] = cur_sch.current_version_timestamp(self.name)
         return d
 
     def __repr__(self):
