@@ -10,6 +10,7 @@ from tasr.headers import SchemaHeaderBot, SubjectHeaderBot
 import unittest
 from webtest import TestApp
 import tasr.app
+import json
 import StringIO
 
 
@@ -95,12 +96,34 @@ class TestTASRSubjectApp(TASRTestCase):
         self.assertEqual(self.event_type, metas[self.event_type].name,
                          'unexpected subject name')
 
+    def test_lookup_subject__accept_json(self):
+        '''GET /tasr/subject/<subject> - lookup the subject by name'''
+        self.register_subject(self.event_type)
+        resp = self.tasr_app.request(self.subject_url, method='GET',
+                                     accept='text/json')
+        self.abort_diff_status(resp, 200)
+        metas = SubjectHeaderBot.extract_metadata(resp)
+        self.assertEqual(self.event_type, metas[self.event_type].name,
+                         'unexpected subject name')
+
     def test_lookup_missing_subject(self):
         '''GET /tasr/subject/<subject> - lookup the subject by name'''
         missing_subject_name = 'bob'
         url = '%s/%s' % (self.url_prefix, missing_subject_name)
         resp = self.tasr_app.request(url, method='GET', expect_errors=True)
         self.abort_diff_status(resp, 404)
+
+    def test_lookup_missing_subject__accept_json(self):
+        '''GET /tasr/subject/<subject> - lookup the subject by name'''
+        missing_subject_name = 'bob'
+        url = '%s/%s' % (self.url_prefix, missing_subject_name)
+        resp = self.tasr_app.request(url, method='GET',
+                                     accept='text/json',
+                                     expect_errors=True)
+        self.abort_diff_status(resp, 404)
+        # we expect a JSON error back, so check that we got it
+        json_error = json.loads(resp.body)  # body is parseable JSON
+        self.assertEqual(404, json_error["status_code"], "expected a 404")
 
     def test_register_subject(self):
         '''PUT /tasr/subject - registers the subject (not the schema)'''
@@ -109,6 +132,21 @@ class TestTASRSubjectApp(TASRTestCase):
         metas = SubjectHeaderBot.extract_metadata(resp)
         self.assertEqual(self.event_type, metas[self.event_type].name,
                          'unexpected subject name')
+
+    def test_register_subject__accept_json(self):
+        '''PUT /tasr/subject - registers the subject (not the schema)'''
+        url = '%s/subject/%s' % (self.url_prefix, self.event_type)
+        dummy_config = {'dummy_config_key': 'dummy_config_val'}
+        resp = self.tasr_app.put(url, dummy_config, {'Accept': 'text/json'})
+        self.abort_diff_status(resp, 201)
+        metas = SubjectHeaderBot.extract_metadata(resp)
+        self.assertEqual(self.event_type, metas[self.event_type].name,
+                         'unexpected subject name')
+        # check the returned JSON to ensure it worked
+        json_sub = json.loads(resp.body)
+        self.assertEqual(self.event_type, json_sub["subject_name"],
+                         "bad subject name")
+        self.assertEqual(dummy_config, json_sub["config"], "bad config")
 
     def test_register_subject_with_no_config(self):
         '''PUT /tasr/subject/<subject> - missing body should be OK'''
