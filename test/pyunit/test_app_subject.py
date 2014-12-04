@@ -17,7 +17,7 @@ APP = tasr.app.TASR_APP
 APP.set_config_mode('local')
 
 
-class TestTASRAppSVAPI(TASRTestCase):
+class TestTASRSubjectApp(TASRTestCase):
     '''These tests check that the TASR S+V REST API, expected by the Avro-1124
     repo code.  This does not check the TASR native API calls.
     '''
@@ -54,7 +54,54 @@ class TestTASRAppSVAPI(TASRTestCase):
                                      expect_errors=expect_errors,
                                      body=schema_str)
 
+    ###########################################################################
     # subject tests
+    ###########################################################################
+    def test_all_subject_names(self):
+        '''GET /tasr/subject - gets _all_ current subjects, as expected'''
+        # reg two vers for target subject and one for an alt subject
+        self.register_subject(self.event_type)
+        alt_subject_name = 'bob'
+        self.register_subject(alt_subject_name)
+        # now get all and check the headers
+        resp = self.tasr_app.request('%s/subject' % self.url_prefix,
+                                     method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+
+        self.assertIn(self.event_type, meta_dict.keys(), 'missing subject')
+        subj = meta_dict[self.event_type]
+        self.assertEqual(self.event_type, subj.name, 'bad subject name')
+
+        self.assertIn(alt_subject_name, meta_dict.keys(), 'missing subject')
+        alt_subj = meta_dict[alt_subject_name]
+        self.assertEqual(alt_subject_name, alt_subj.name, 'bad subject name')
+
+        # lastly check the body
+        buff = StringIO.StringIO(resp.body)
+        group_names = []
+        for topic_line in buff:
+            group_names.append(topic_line.strip())
+        buff.close()
+        self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
+                             'Expected group_names in body to match headers.')
+
+    def test_lookup_subject(self):
+        '''GET /tasr/subject/<subject> - lookup the subject by name'''
+        self.register_subject(self.event_type)
+        resp = self.tasr_app.request(self.subject_url, method='GET')
+        self.abort_diff_status(resp, 200)
+        metas = SubjectHeaderBot.extract_metadata(resp)
+        self.assertEqual(self.event_type, metas[self.event_type].name,
+                         'unexpected subject name')
+
+    def test_lookup_missing_subject(self):
+        '''GET /tasr/subject/<subject> - lookup the subject by name'''
+        missing_subject_name = 'bob'
+        url = '%s/%s' % (self.url_prefix, missing_subject_name)
+        resp = self.tasr_app.request(url, method='GET', expect_errors=True)
+        self.abort_diff_status(resp, 404)
+
     def test_register_subject(self):
         '''PUT /tasr/subject - registers the subject (not the schema)'''
         resp = self.register_subject(self.event_type)
@@ -117,22 +164,6 @@ class TestTASRAppSVAPI(TASRTestCase):
         self.assertEqual(self.event_type, metas[self.event_type].name,
                          'unexpected subject name')
 
-    def test_lookup_subject(self):
-        '''GET /tasr/subject/<subject> - lookup the subject by name'''
-        self.register_subject(self.event_type)
-        resp = self.tasr_app.request(self.subject_url, method='GET')
-        self.abort_diff_status(resp, 200)
-        metas = SubjectHeaderBot.extract_metadata(resp)
-        self.assertEqual(self.event_type, metas[self.event_type].name,
-                         'unexpected subject name')
-
-    def test_lookup_missing_subject(self):
-        '''GET /tasr/subject/<subject> - lookup the subject by name'''
-        missing_subject_name = 'bob'
-        url = '%s/%s' % (self.url_prefix, missing_subject_name)
-        resp = self.tasr_app.request(url, method='GET', expect_errors=True)
-        self.abort_diff_status(resp, 404)
-
     def test_subject_config(self):
         '''GET /tasr/subject/<subject>/config - get the config map'''
         resp = self.tasr_app.put(self.subject_url,
@@ -176,96 +207,6 @@ class TestTASRAppSVAPI(TASRTestCase):
         url = '%s/integral' % self.subject_url
         resp = self.tasr_app.request(url, method='GET', expect_errors=True)
         self.abort_diff_status(resp, 404)
-
-    def test_all_subject_names(self):
-        '''GET /tasr/subject - gets _all_ current subjects, as expected'''
-        # reg two vers for target subject and one for an alt subject
-        self.register_subject(self.event_type)
-        alt_subject_name = 'bob'
-        self.register_subject(alt_subject_name)
-        # now get all and check the headers
-        resp = self.tasr_app.request('%s/subject' % self.url_prefix,
-                                     method='GET')
-        self.abort_diff_status(resp, 200)
-        meta_dict = SubjectHeaderBot.extract_metadata(resp)
-
-        self.assertIn(self.event_type, meta_dict.keys(), 'missing subject')
-        subj = meta_dict[self.event_type]
-        self.assertEqual(self.event_type, subj.name, 'bad subject name')
-
-        self.assertIn(alt_subject_name, meta_dict.keys(), 'missing subject')
-        alt_subj = meta_dict[alt_subject_name]
-        self.assertEqual(alt_subject_name, alt_subj.name, 'bad subject name')
-
-        # lastly check the body
-        buff = StringIO.StringIO(resp.body)
-        group_names = []
-        for topic_line in buff:
-            group_names.append(topic_line.strip())
-        buff.close()
-        self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
-                             'Expected group_names in body to match headers.')
-
-    def test_active_subjects(self):
-        '''GET /tasr/collection/subjects/active - gets _active_ subjects (that
-        is, ones with at least one schema), as expected'''
-        # reg two vers for target subject and one for an alt subject
-        self.register_subject(self.event_type)
-        alt_subject_name = 'bob'
-        self.register_subject(alt_subject_name)
-        # now get all and check the headers
-        all_url = "%s/collection/subjects/all" % self.url_prefix
-        resp = self.tasr_app.request(all_url, method='GET')
-        self.abort_diff_status(resp, 200)
-        meta_dict = SubjectHeaderBot.extract_metadata(resp)
-        # we should have a GroupMetadata object for each group in the headers
-        for sub_name in [self.event_type, alt_subject_name]:
-            self.assertIn(sub_name, meta_dict.keys(), 'missing subject')
-            subj = meta_dict[sub_name]
-            self.assertEqual(sub_name, subj.name, 'bad subject name')
-
-        # now get the ACTIVE subjects, which should be empty so far
-        active_url = "%s/collection/subjects/active" % self.url_prefix
-        resp = self.tasr_app.request(active_url, method='GET')
-        self.abort_diff_status(resp, 200)
-        meta_dict = SubjectHeaderBot.extract_metadata(resp)
-        # we should have no GroupMetadata objects
-        for sub_name in [self.event_type, alt_subject_name]:
-            self.assertNotIn(sub_name, meta_dict.keys(), 'unexpected subject')
-
-        # now register a schema for the base subject and recheck
-        resp = self.register_schema(self.event_type, self.schema_str)
-        self.abort_diff_status(resp, 201)
-
-        # the get_all should be unchanged, the get_active should have one
-        resp = self.tasr_app.request(all_url, method='GET')
-        self.abort_diff_status(resp, 200)
-        meta_dict = SubjectHeaderBot.extract_metadata(resp)
-        # we should have a GroupMetadata object for each group in the headers
-        for sub_name in [self.event_type, alt_subject_name]:
-            self.assertIn(sub_name, meta_dict.keys(), 'missing subject')
-            subj = meta_dict[sub_name]
-            self.assertEqual(sub_name, subj.name, 'bad subject name')
-
-        # now get the ACTIVE subjects, which should be empty so far
-        resp = self.tasr_app.request(active_url, method='GET')
-        self.abort_diff_status(resp, 200)
-        meta_dict = SubjectHeaderBot.extract_metadata(resp)
-        # we should have a GroupMetadata object for one group in the headers
-        self.assertNotIn(alt_subject_name, meta_dict.keys(), 'unexpected obj')
-        # the event_type should be there
-        self.assertIn(self.event_type, meta_dict.keys(), 'missing subject')
-        subj = meta_dict[self.event_type]
-        self.assertEqual(self.event_type, subj.name, 'bad subject name')
-
-        # lastly check the body
-        buff = StringIO.StringIO(resp.body)
-        group_names = []
-        for topic_line in buff:
-            group_names.append(topic_line.strip())
-        buff.close()
-        self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
-                             'Expected group_names in body to match headers.')
 
     def test_all_subject_ids(self):
         '''GET /tasr/subject/<subject>/all_ids - gets schema IDs for all
@@ -312,7 +253,9 @@ class TestTASRAppSVAPI(TASRTestCase):
         buff.close()
         self.assertListEqual(versions, all_vers, 'Bad versions list.')
 
+    ###########################################################################
     # schema tests
+    ###########################################################################
     def test_register_schema(self):
         '''PUT /tasr/subject/<subject>/register - as expected'''
         resp = self.register_schema(self.event_type, self.schema_str)
@@ -614,5 +557,5 @@ class TestTASRAppSVAPI(TASRTestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRAppSVAPI)
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRSubjectApp)
     unittest.TextTestRunner(verbosity=2).run(suite)

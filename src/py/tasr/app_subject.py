@@ -279,12 +279,10 @@ def lookup_by_schema_str(subject_name=None):
     abort_if_subject_bad(subject_name)
     abort_if_content_type_not_json()
     abort_if_body_empty()
-    hbot = tasr.headers.SchemaHeaderBot(bottle.response)
     try:
         schema_str = bottle.request.body.getvalue()
         reg_schema = TASR_SUBJECT_APP.ASR.get_schema_for_schema_str(schema_str)
         if reg_schema and subject_name in reg_schema.group_names:
-            hbot.standard_headers(reg_schema, subject_name)
             return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
 
         # For unregistered schemas, the status is a 404 and the return body is
@@ -293,6 +291,7 @@ def lookup_by_schema_str(subject_name=None):
         # inherited abort() as it would discard the added ID headers.
         unreg_schema = TASR_SUBJECT_APP.ASR.instantiate_registered_schema()
         unreg_schema.schema_str = schema_str
+        hbot = tasr.headers.SchemaHeaderBot(bottle.response)
         hbot.set_ids(unreg_schema)
         bottle.response.status = 404
         # TODO: should we return an object with the IDs here if JSON accepted?
