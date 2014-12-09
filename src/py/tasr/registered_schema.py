@@ -11,7 +11,9 @@ import base64
 import binascii
 import avro.schema
 import collections
+import sets
 import json
+import logging
 
 MD5_BYTES = 16
 SHA256_BYTES = 32
@@ -338,6 +340,227 @@ class RegisteredAvroSchema(RegisteredSchema):
         self.schema = avro.schema.parse(self.canonical_schema_str)
 
         # add additional checks?
+        return True
+
+    def back_compatible_with(self, obj):
+        '''Checks whether the current schema is a valid extension of the schema
+        or list of schemas passed to the method.  For purposes of discussion,
+        there are 4 basic kinds of field we care about:
+
+        - REQ: fixed type, a required field (missing == invalid), no nulls
+        - ID: fixed type, enables demo segmentation, no changes, no nulls
+        - PART: fixed type, enables partitioning, no changes, no nulls
+        - OPT: union type, allow nulls, must have a null default
+
+        For an Avro schema to be back-compatible (in our system) with previous
+        versions:
+
+        - The non-fields document elements must remain the same.
+        - Field _order_ may be changed.
+        - REQ fields may convert to ID, PART or OPT fields, but may not revert.
+        - There may be a maximum of _one_ ID field.
+        - There may be a maximum of _one_ PART field.
+        - Once a REQ field has become an ID or PART field, it may not change.
+        - OPT fields must have a union type with 'null' and one other type.
+        - OPT fields must have a 'null' default value.
+        - OPT fields may be added or removed across schema versions.
+        - A REQ that becomes an OPT must use the original type as the non-null
+           type in the union.
+        - Removal of a REQ field is treated as an implicit conversion to an OPT
+           field followed by a removal of that field.
+        - A removed field (REQ or OPT) may only ever return as an OPT field
+           with a union type of 'null' and the original non-null type.
+
+        Why do we care?  Hive, basically.  The files in HDFS each contain their
+        own serialization schema in the header.  However, for the abstraction
+        that all those files are really a table with a shared table structure
+        to work, we need to make sure that there is a 'master' view that covers
+        all the schema versions.  It's OK if some versions have fields that
+        others do not as long as Hive can default the void to a null, but we
+        cannot have fields with conflicting definitions.
+
+        Note that there are legacy schema versions with a union type, allowing
+        nulls, but no default.  These are allowed as old versions, but when
+        present in the current object make it non-back-compatible.
+        '''
+
+        # ensure we have a list of RegisteredAvroSchema objects to check
+        olds = []
+        if obj and isinstance(obj, list):
+            for ver in obj:
+                if not isinstance(ver, RegisteredAvroSchema):
+                    logging.debug('Old version not a RegisteredAvroSchema')
+                    return False
+                olds.append(ver)
+        elif not obj or not isinstance(obj, RegisteredAvroSchema):
+            logging.debug('Old version not a RegisteredAvroSchema')
+            return False
+        else:
+            olds.append(obj)
+
+        if not self.canonical_schema_str:
+            # short cut, also ensures ordered dict available
+            logging.debug('Missing canonical schema string.')
+            return False
+
+        # process the old versions, ensuring they are cross-compatible first
+        e_namespace = None
+        e_type = None
+        e_name = None
+        id_field = None
+        part_field = None
+        req_fields = dict()
+        opt_fields = dict()
+        is_first_ver = True
+        for rs_ver in olds:
+            if not rs_ver.canonical_schema_str:
+                # short cut, also ensures ordered dict available
+                logging.debug('Old version missing canonical schema string.')
+                return False
+            ver = rs_ver.ordered
+            # check non-field entities
+            if not ('namespace' in ver and 'type' in ver and 'name' in ver):
+                logging.debug('Old version missing non-field element(s).')
+                return False
+            elif e_namespace == None and e_type == None and e_name == None:
+                e_namespace = ver['namespace']
+                e_type = ver['type']
+                e_name = ver['name']
+            else:
+                if (e_namespace != ver['namespace']
+                    or e_type != ver['type']
+                    or e_name != ver['name']):
+                    logging.debug('Old version non-field element mismatch.')
+                    return False
+            # check fields
+            if not ('fields' in ver and isinstance(ver['fields'], list)):
+                logging.debug('Old ver does not have a fields element.')
+                return False
+            for field in ver['fields']:
+                if not 'name' in field:
+                    logging.debug('Field name missing.')
+                    return False
+                if not 'type' in field:
+                    logging.debug('Type missing for %s field.', field['name'])
+                    return False
+                if isinstance(field['type'], list):
+                    # so, OPT or REQ*, should have a union of null and a type
+                    if not 'null' in field['type']:
+                        logging.debug('Missing null type.')
+                        return False
+                    if not 'default' in field or field['default'] != None:
+                        logging.debug('Missing null default. Legacy REQ*, OK.')
+                        if field['name'] in opt_fields.keys():
+                            logging.debug('OPT -> REQ* for %s', field['name'])
+                            return False
+                        if id_field and field == id_field:
+                            logging.debug('ID -> REQ* for %s', field['name'])
+                            return False
+                        if part_field and field == part_field:
+                            logging.debug('PART -> REQ* for %s', field['name'])
+                            return False
+                        req_fields[field['name']] = field
+                        continue
+                    # it is an OPT field
+                    if id_field and field == id_field:
+                        logging.debug('ID -> OPT for %s', field['name'])
+                        return False
+                    if part_field and field == part_field:
+                        logging.debug('PART -> OPT for %s', field['name'])
+                        return False
+                    if field['name'] in req_fields.keys():
+                        # REQ -> OPT allowed transformation
+                        old_type = req_fields[field['name']]['type']
+                        if not old_type in field['type']:
+                            logging.debug('REQ -> OPT incompatible types')
+                            return False
+                        req_fields.pop(field['name'])
+                        opt_fields[field['name']] = field
+                    if field['name'] in opt_fields.keys():
+                        # OPT -> OPT, so check it's the same
+                        if opt_fields[field['name']] != field:
+                            logging.debug('OPT field mismatch: %s != %s',
+                                          opt_fields[field['name']], field)
+                            return False
+                    else:
+                        opt_fields[field['name']] = field
+                else:
+                    # REQ field
+                    if field['name'] in req_fields.keys():
+                        if field != req_fields[field['name']]:
+                            logging.debug('REQ field mismatch: %s != %s',
+                                          req_fields[field['name']], field)
+                            return False
+                    elif is_first_ver:
+                        req_fields[field['name']] = field
+                    else:
+                        logging.debug('Cannot add fixed fields after ver 1.')
+                        return False
+            is_first_ver = False
+            # end of ver loop
+
+        # now check the object itself for compatibility with the old versions
+        ver = self.ordered
+        if not ('namespace' in ver and 'type' in ver and 'name' in ver):
+            logging.debug('Missing non-field element(s).')
+            return False
+        else:
+            if (e_namespace != ver['namespace']
+                or e_type != ver['type']
+                or e_name != ver['name']):
+                logging.debug('Non-field element mismatch.')
+                return False
+        # check fields
+        if not ('fields' in ver and isinstance(ver['fields'], list)):
+            logging.debug('Does not have a fields element.')
+            return False
+        for field in ver['fields']:
+            if not 'name' in field:
+                logging.debug('Field name missing.')
+                return False
+            if not 'type' in field:
+                logging.debug('Type missing for %s field.', field['name'])
+                return False
+            if isinstance(field['type'], list):
+                # OPT should have a union of null and a type
+                if not 'null' in field['type']:
+                    logging.debug('Missing null type.')
+                    return False
+                if not 'default' in field or field['default'] != None:
+                    logging.debug('Missing null default.')
+                    return False
+                if id_field and field == id_field:
+                    logging.debug('ID -> OPT for %s', field['name'])
+                    return False
+                if part_field and field == part_field:
+                    logging.debug('PART -> OPT for %s', field['name'])
+                    return False
+                if field['name'] in req_fields.keys():
+                    # REQ -> OPT allowed transformation
+                    old_type = req_fields[field['name']]['type']
+                    if not old_type in field['type']:
+                        logging.debug('REQ -> OPT incompatible types')
+                        return False
+                    req_fields.pop(field['name'])
+                    opt_fields[field['name']] = field
+                if field['name'] in opt_fields.keys():
+                    # OPT -> OPT, so check it's the same
+                    if opt_fields[field['name']] != field:
+                        logging.debug('OPT field mismatch: %s != %s',
+                                      opt_fields[field['name']], field)
+                        return False
+                else:
+                    opt_fields[field['name']] = field
+            else:
+                # REQ field
+                if field['name'] in req_fields.keys():
+                    if field != req_fields[field['name']]:
+                        logging.debug('REQ field mismatch: %s != %s',
+                                      req_fields[field['name']], field)
+                        return False
+                else:
+                    logging.debug('Cannot add fixed fields in later versions.')
+                    return False
         return True
 
     @staticmethod

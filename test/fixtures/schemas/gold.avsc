@@ -12,17 +12,16 @@
      {"name": "gold__transaction_id", "type": "string"},
      {"name": "gold__new_balance", "type": "int"},
      {"name": "gold__result", "type": "string"},
-     {"name": "gold__referrer", "type": ["null", "string"]},
+     {"name": "gold__referrer", "type": ["null", "string"], "default": null},
      {"name": "gold__session_id", "type": "string"},
-     {"name": "gold__processor_tx_id", "type": ["null", "string"]},
+     {"name": "gold__processor_tx_id", "type": ["null", "string"], "default": null},
      {"name": "gold__bonus_amount", "type": "int"},
 
-     {"name": "meta__topic_name", "type": ["null", "string"]},
-     {"name": "meta__event_type", "type": ["null", "string"]},
-     {"name": "meta__kvpairs", "type":
+     {"name": "meta__topic_name", "type": ["null", "string"], "default": null},
+     {"name": "meta__kvpairs", "default": null, "type":
        [ "null", { "type": "map", "values": ["null", "string"] } ]
      },
-     {"name": "meta__handlers", "type":
+     {"name": "meta__handlers", "default": null, "type":
        [ "null",
          { "type": "array", "items":
            { "type": "record",
