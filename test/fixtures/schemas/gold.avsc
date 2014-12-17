@@ -1,39 +1,154 @@
-{"namespace": "tagged.events",
- "type": "record",
- "name": "Gold",
- "fields": [
-     {"name": "source__timestamp", "type": "long"},
-     {"name": "source__agent", "type": "string"},
-     {"name": "source__ip_address", "type": "string"},
-
-     {"name": "gold__transaction_type", "type": "int"},
-     {"name": "gold__transaction_amount", "type": "int"},
-     {"name": "gold__user_id", "type": "long"},
-     {"name": "gold__transaction_id", "type": "string"},
-     {"name": "gold__new_balance", "type": "int"},
-     {"name": "gold__result", "type": "string"},
-     {"name": "gold__referrer", "type": ["null", "string"], "default": null},
-     {"name": "gold__session_id", "type": "string"},
-     {"name": "gold__processor_tx_id", "type": ["null", "string"], "default": null},
-     {"name": "gold__bonus_amount", "type": "int"},
-
-     {"name": "meta__topic_name", "type": ["null", "string"], "default": null},
-     {"name": "meta__kvpairs", "default": null, "type":
-       [ "null", { "type": "map", "values": ["null", "string"] } ]
-     },
-     {"name": "meta__handlers", "default": null, "type":
-       [ "null",
-         { "type": "array", "items":
-           { "type": "record",
-             "name": "Handler",
-             "fields": [
-               {"name": "timestamp", "type": "long"},
-               {"name": "agent", "type": "string"},
-               {"name": "ip_address", "type": "string"}
-             ]
-           }
-         }
-       ]
-     }
- ]
+{
+  "namespace": "tagged.events",
+  "type": "record",
+  "name": "Gold",
+  "fields": [
+    {
+      "name": "source__timestamp",
+      "type": "long"
+    },
+    {
+      "name": "source__agent",
+      "type": "string"
+    },
+    {
+      "name": "source__ip_address",
+      "type": "string"
+    },
+    {
+      "name": "gold__bonus_amount",
+      "type": [
+         "null",
+         "int"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__new_balance",
+      "type": [
+        "null",
+        "int"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__processor_tx_id",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__referrer",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__result",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__session_id",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__transaction_amount",
+       "type": [
+         "null",
+         "int"
+       ],
+       "default": null
+    },
+    {
+      "name": "gold__transaction_id",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "gold__transaction_type",
+       "type": [
+         "null",
+         "int"
+       ],
+       "default": null
+    },
+    {
+      "name": "gold__user_id",
+      "type": "long"
+    },
+    {
+      "name": "gold__platform",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "meta__topic_name",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "meta__kvpairs",
+      "type": [
+        "null",
+        {
+          "type": "map",
+          "default": null,
+          "values": [
+            "null",
+            "string"
+          ]
+        }
+      ],
+      "default": null
+    },
+    {
+      "name": "meta__handlers",
+      "type": [
+        "null",
+        {
+          "type": "array",
+          "items": {
+            "type": "record",
+            "name": "Handler",
+            "fields": [
+              {
+                "name": "timestamp",
+                "type": "long"
+              },
+              {
+                "name": "agent",
+                "type": "string"
+              },
+              {
+                "name": "ip_address",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ],
+      "default": null
+    }
+  ]
 }

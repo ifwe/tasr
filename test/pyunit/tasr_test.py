@@ -6,8 +6,9 @@ Created on July 1, 2014
 
 import sys
 import os
+import json
 TEST_DIR = os.path.abspath(os.path.dirname(__file__))
-SRC_DIR = os.path.abspath(os.path.dirname('%s/../../src/py/tagged' % TEST_DIR))
+SRC_DIR = os.path.abspath(os.path.dirname('%s/../../src/py/' % TEST_DIR))
 sys.path.insert(0, os.path.join(TEST_DIR, SRC_DIR))
 FIX_DIR = os.path.abspath(os.path.dirname("%s/../fixtures/" % TEST_DIR))
 
@@ -26,3 +27,12 @@ class TASRTestCase(unittest.TestCase):
     def get_fixture_file(rel_path, mode):
         path = '%s/%s' % (TASRTestCase.fix_dir, rel_path)
         return open(path, mode)
+
+    @staticmethod
+    def get_schema_permutation(schema_str, field_name=None, field_type=None):
+        jd = json.loads(schema_str)
+        field_name = "extra" if not field_name else field_name
+        field_type = "string" if not field_type else field_type
+        jd['fields'].append({"name": field_name, "type": ["null", field_type],
+                             "default": None})
+        return json.dumps(jd)

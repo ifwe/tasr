@@ -11,7 +11,6 @@ import base64
 import binascii
 import avro.schema
 import collections
-import sets
 import json
 import logging
 
@@ -343,17 +342,48 @@ class RegisteredAvroSchema(RegisteredSchema):
         return True
 
     def back_compatible_with(self, obj):
-        '''Checks whether the current schema is a valid extension of the schema
-        or list of schemas passed to the method.  For purposes of discussion,
-        there are 4 basic kinds of field we care about:
+        '''Convenience method that obscures the use of the MasterAvroSchema in
+        determining compatibility.'''
+        if obj == None or (isinstance(obj, list) and len(obj) == 0):
+            # If there is no "back", then it's compatible.
+            return True
+        try:
+            mas = None
+            if isinstance(obj, list):
+                mas = MasterAvroSchema(obj)
+            elif isinstance(obj, RegisteredAvroSchema):
+                mas = MasterAvroSchema([obj, ])
+            else:
+                logging.debug('Can only be compatible with a RAS or a list.')
+                return False
+            # we have a master schema, so check compatibility with it
+            return mas.is_compatible(self)
+        except ValueError as err:
+            logging.warn(err)
+            return False
+
+    @staticmethod
+    def is_valid_avro_schema(schema_str):
+        test_schema = RegisteredAvroSchema()
+        test_schema.schema_str = schema_str
+        try:
+            return test_schema.validate_schema_str()
+        except:
+            return False
+
+
+class MasterAvroSchema(RegisteredAvroSchema):
+    '''Checks whether the current schema is a valid extension of the schema
+    or list of schemas passed to the method.  For purposes of discussion,
+    there are 4 basic kinds of field we care about:
 
         - REQ: fixed type, a required field (missing == invalid), no nulls
         - ID: fixed type, enables demo segmentation, no changes, no nulls
         - PART: fixed type, enables partitioning, no changes, no nulls
         - OPT: union type, allow nulls, must have a null default
 
-        For an Avro schema to be back-compatible (in our system) with previous
-        versions:
+    For an Avro schema to be back-compatible (in our system) with previous
+    versions:
 
         - The non-fields document elements must remain the same.
         - Field _order_ may be changed.
@@ -371,145 +401,191 @@ class RegisteredAvroSchema(RegisteredSchema):
         - A removed field (REQ or OPT) may only ever return as an OPT field
            with a union type of 'null' and the original non-null type.
 
-        Why do we care?  Hive, basically.  The files in HDFS each contain their
-        own serialization schema in the header.  However, for the abstraction
-        that all those files are really a table with a shared table structure
-        to work, we need to make sure that there is a 'master' view that covers
-        all the schema versions.  It's OK if some versions have fields that
-        others do not as long as Hive can default the void to a null, but we
-        cannot have fields with conflicting definitions.
+    Why do we care?  Hive, basically.  The files in HDFS each contain their
+    own serialization schema in the header.  However, for the abstraction
+    that all those files are really a table with a shared table structure
+    to work, we need to make sure that there is a 'master' view that covers
+    all the schema versions.  It's OK if some versions have fields that
+    others do not as long as Hive can default the void to a null, but we
+    cannot have fields with conflicting definitions.
 
-        Note that there are legacy schema versions with a union type, allowing
-        nulls, but no default.  These are allowed as old versions, but when
-        present in the current object make it non-back-compatible.
-        '''
+    Note that there are legacy schema versions with a union type, allowing
+    nulls, but no default.  These are allowed as old versions, but when
+    present in the current object make it non-back-compatible.
+    '''
 
-        # ensure we have a list of RegisteredAvroSchema objects to check
-        olds = []
-        if obj and isinstance(obj, list):
-            for ver in obj:
-                if not isinstance(ver, RegisteredAvroSchema):
-                    logging.debug('Old version not a RegisteredAvroSchema')
-                    return False
-                olds.append(ver)
-        elif not obj or not isinstance(obj, RegisteredAvroSchema):
-            logging.debug('Old version not a RegisteredAvroSchema')
-            return False
-        else:
-            olds.append(obj)
+    def __init__(self, slist):
+        super(MasterAvroSchema, self).__init__()
+        self.schema_list = None
+        self.e_namespace = None
+        self.e_type = None
+        self.e_name = None
+        self.id_field = None
+        self.part_field = None
+        self.required_fields = dict()
+        self.opt_fields = dict()
+        self.field_name_list = None
+        self.deleted_field_names = None
+        # if one was provided, set it
+        self.set_schema_list(slist)
 
-        if not self.canonical_schema_str:
-            # short cut, also ensures ordered dict available
-            logging.debug('Missing canonical schema string.')
-            return False
-
-        # process the old versions, ensuring they are cross-compatible first
-        e_namespace = None
-        e_type = None
-        e_name = None
-        id_field = None
-        part_field = None
-        req_fields = dict()
-        opt_fields = dict()
+    def set_schema_list(self, slist):
+        if slist == None or not isinstance(slist, list) or len(slist) == 0:
+            self.schema_list = None
+            logging.debug('Not a list.')
+            return
         is_first_ver = True
-        for rs_ver in olds:
-            if not rs_ver.canonical_schema_str:
-                # short cut, also ensures ordered dict available
-                logging.debug('Old version missing canonical schema string.')
-                return False
-            ver = rs_ver.ordered
+        self.schema_list = []
+        for elem in slist:
+            ras = None
+            # these can be JSON schema defs or actual RAS objects
+            if isinstance(elem, basestring):
+                ras = RegisteredAvroSchema()
+                ras.schema_str = elem
+            elif isinstance(elem, RegisteredAvroSchema):
+                ras = elem
+            else:
+                raise ValueError('Not a schema string or a RAS')
+            if not ras.canonical_schema_str:  # also ensures ordered available
+                raise ValueError('RAS has no canonical schema string')
+
+            ver = ras.ordered
             # check non-field entities
             if not ('namespace' in ver and 'type' in ver and 'name' in ver):
-                logging.debug('Old version missing non-field element(s).')
-                return False
-            elif e_namespace == None and e_type == None and e_name == None:
-                e_namespace = ver['namespace']
-                e_type = ver['type']
-                e_name = ver['name']
+                raise ValueError('Missing non-field elements.')
+            elif (self.e_namespace == None
+                  and self.e_type == None
+                  and self.e_name == None):
+                self.e_namespace = ver['namespace']
+                self.e_type = ver['type']
+                self.e_name = ver['name']
             else:
-                if (e_namespace != ver['namespace']
-                    or e_type != ver['type']
-                    or e_name != ver['name']):
-                    logging.debug('Old version non-field element mismatch.')
-                    return False
-            # check fields
+                if (self.e_namespace != ver['namespace']
+                    or self.e_type != ver['type']
+                    or self.e_name != ver['name']):
+                    raise ValueError('Non-field element mismatch.')
+
+            # check present fields
             if not ('fields' in ver and isinstance(ver['fields'], list)):
-                logging.debug('Old ver does not have a fields element.')
-                return False
+                raise ValueError('No fields element.')
+            self.field_name_list = []
             for field in ver['fields']:
                 if not 'name' in field:
-                    logging.debug('Field name missing.')
-                    return False
+                    raise ValueError('Field name missing.')
+                name = field['name']
+                self.field_name_list.append(name)
                 if not 'type' in field:
-                    logging.debug('Type missing for %s field.', field['name'])
-                    return False
+                    raise ValueError('Type missing for %s.' % name)
                 if isinstance(field['type'], list):
                     # so, OPT or REQ*, should have a union of null and a type
                     if not 'null' in field['type']:
-                        logging.debug('Missing null type.')
-                        return False
+                        raise ValueError('%s missing null type.' % name)
                     if not 'default' in field or field['default'] != None:
                         logging.debug('Missing null default. Legacy REQ*, OK.')
-                        if field['name'] in opt_fields.keys():
-                            logging.debug('OPT -> REQ* for %s', field['name'])
-                            return False
-                        if id_field and field == id_field:
-                            logging.debug('ID -> REQ* for %s', field['name'])
-                            return False
-                        if part_field and field == part_field:
-                            logging.debug('PART -> REQ* for %s', field['name'])
-                            return False
-                        req_fields[field['name']] = field
+                        if field['name'] in self.opt_fields.keys():
+                            raise ValueError('OPT -> REQ* for %s' % name)
+                        if self.id_field and field == self.id_field:
+                            raise ValueError('ID -> REQ* for %s' % name)
+                        if self.part_field and field == self.part_field:
+                            raise ValueError('PART -> REQ* for %s' % name)
+                        self.required_fields[name] = field
                         continue
                     # it is an OPT field
-                    if id_field and field == id_field:
-                        logging.debug('ID -> OPT for %s', field['name'])
-                        return False
-                    if part_field and field == part_field:
-                        logging.debug('PART -> OPT for %s', field['name'])
-                        return False
-                    if field['name'] in req_fields.keys():
+                    if self.id_field and field == self.id_field:
+                        raise ValueError('ID -> OPT for %s' % name)
+                    if self.part_field and field == self.part_field:
+                        raise ValueError('PART -> OPT for %s' % name)
+                    if name in self.required_fields.keys():
                         # REQ -> OPT allowed transformation
-                        old_type = req_fields[field['name']]['type']
+                        old_type = self.required_fields[name]['type']
                         if not old_type in field['type']:
-                            logging.debug('REQ -> OPT incompatible types')
-                            return False
-                        req_fields.pop(field['name'])
-                        opt_fields[field['name']] = field
-                    if field['name'] in opt_fields.keys():
+                            raise ValueError('REQ -> OPT incompatible types')
+                        self.required_fields.pop(name)
+                        self.opt_fields[name] = field
+                    if name in self.opt_fields.keys():
                         # OPT -> OPT, so check it's the same
-                        if opt_fields[field['name']] != field:
-                            logging.debug('OPT field mismatch: %s != %s',
-                                          opt_fields[field['name']], field)
-                            return False
+                        if self.opt_fields[name] != field:
+                            raise ValueError('OPT field mismatch: %s != %s' %
+                                             (self.opt_fields[name], field))
                     else:
-                        opt_fields[field['name']] = field
+                        self.opt_fields[name] = field
                 else:
                     # REQ field
-                    if field['name'] in req_fields.keys():
-                        if field != req_fields[field['name']]:
-                            logging.debug('REQ field mismatch: %s != %s',
-                                          req_fields[field['name']], field)
-                            return False
+                    if name in self.required_fields.keys():
+                        if field != self.required_fields[name]:
+                            raise ValueError('REQ field mismatch: %s != %s' %
+                                             (self.required_fields[name],
+                                              field))
                     elif is_first_ver:
-                        req_fields[field['name']] = field
+                        self.required_fields[name] = field
                     else:
-                        logging.debug('Cannot add fixed fields after ver 1.')
-                        return False
+                        raise ValueError('Cannot add REQ fields after ver 1.')
+                # end of present fields loop -- check for disallowed deletion
+                if self.id_field:
+                    if not self.id_field['name'] in self.field_name_list:
+                        raise ValueError('Cannot delete ID field.')
+                if self.part_field:
+                    if not self.part_field['name'] in self.field_name_list:
+                        raise ValueError('Cannot delete PART field.')
             is_first_ver = False
             # end of ver loop
 
-        # now check the object itself for compatibility with the old versions
-        ver = self.ordered
+            # build deleted fields list
+            self.deleted_field_names = []
+            for fname in self.required_fields.keys():
+                if not fname in self.field_name_list:
+                    self.deleted_field_names.append(fname)
+            for fname in self.opt_fields.keys():
+                if not fname in self.field_name_list:
+                    self.deleted_field_names.append(fname)
+
+            # now create the master schema string
+            mfields = []
+            # add the retained fields in the most recent order
+            for fname in self.field_name_list:
+                if fname in self.required_fields:
+                    mfields.append(self.required_fields[fname])
+                elif fname in self.opt_fields:
+                    mfields.append(self.opt_fields[fname])
+            # tack the deleted fields on the end
+            for fname in self.deleted_field_names:
+                if fname in self.required_fields:
+                    mfields.append(self.required_fields[fname])
+                elif fname in self.opt_fields:
+                    mfields.append(self.opt_fields[fname])
+            # now create the ordered dict holding it all
+            od = collections.OrderedDict()
+            od['namespace'] = self.e_namespace
+            od['type'] = self.e_type
+            od['name'] = self.e_name
+            od['fields'] = mfields
+            # and from that, set the schema_str
+            self.schema_str = json.dumps(od)
+
+    def is_compatible(self, obj):
+        if self.schema_list == None:
+            raise ValueError('No versions in master.')
+
+        if not obj or not isinstance(obj, RegisteredAvroSchema):
+            # only RAS objects can be compatible
+            logging.debug('Not a non-null RegisteredAvroSchema')
+            return False
+
+        if not obj.canonical_schema_str:
+            # short cut, also ensured obj.ordered is available
+            return False
+
+        ver = obj.ordered
         if not ('namespace' in ver and 'type' in ver and 'name' in ver):
             logging.debug('Missing non-field element(s).')
             return False
         else:
-            if (e_namespace != ver['namespace']
-                or e_type != ver['type']
-                or e_name != ver['name']):
+            if (self.e_namespace != ver['namespace']
+                or self.e_type != ver['type']
+                or self.e_name != ver['name']):
                 logging.debug('Non-field element mismatch.')
                 return False
+
         # check fields
         if not ('fields' in ver and isinstance(ver['fields'], list)):
             logging.debug('Does not have a fields element.')
@@ -518,8 +594,9 @@ class RegisteredAvroSchema(RegisteredSchema):
             if not 'name' in field:
                 logging.debug('Field name missing.')
                 return False
+            fname = field['name']
             if not 'type' in field:
-                logging.debug('Type missing for %s field.', field['name'])
+                logging.debug('Type missing for %s field.', fname)
                 return False
             if isinstance(field['type'], list):
                 # OPT should have a union of null and a type
@@ -529,45 +606,29 @@ class RegisteredAvroSchema(RegisteredSchema):
                 if not 'default' in field or field['default'] != None:
                     logging.debug('Missing null default.')
                     return False
-                if id_field and field == id_field:
-                    logging.debug('ID -> OPT for %s', field['name'])
-                    return False
-                if part_field and field == part_field:
-                    logging.debug('PART -> OPT for %s', field['name'])
-                    return False
-                if field['name'] in req_fields.keys():
+
+                # TODO: check ID and PART fields remain the same
+
+                if fname in self.required_fields.keys():
                     # REQ -> OPT allowed transformation
-                    old_type = req_fields[field['name']]['type']
+                    old_type = self.required_fields[fname]['type']
                     if not old_type in field['type']:
                         logging.debug('REQ -> OPT incompatible types')
                         return False
-                    req_fields.pop(field['name'])
-                    opt_fields[field['name']] = field
-                if field['name'] in opt_fields.keys():
+                if fname in self.opt_fields.keys():
                     # OPT -> OPT, so check it's the same
-                    if opt_fields[field['name']] != field:
+                    if self.opt_fields[fname] != field:
                         logging.debug('OPT field mismatch: %s != %s',
-                                      opt_fields[field['name']], field)
+                                      self.opt_fields[fname], field)
                         return False
-                else:
-                    opt_fields[field['name']] = field
             else:
                 # REQ field
-                if field['name'] in req_fields.keys():
-                    if field != req_fields[field['name']]:
+                if fname in self.required_fields.keys():
+                    if field != self.required_fields[fname]:
                         logging.debug('REQ field mismatch: %s != %s',
-                                      req_fields[field['name']], field)
+                                      self.required_fields[fname], field)
                         return False
                 else:
                     logging.debug('Cannot add fixed fields in later versions.')
                     return False
         return True
-
-    @staticmethod
-    def is_valid_avro_schema(schema_str):
-        test_schema = RegisteredAvroSchema()
-        test_schema.schema_str = schema_str
-        try:
-            return test_schema.validate_schema_str()
-        except:
-            return False

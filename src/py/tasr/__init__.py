@@ -546,16 +546,19 @@ class RedisSchemaRepository(object):
             raise InvalidGroupException('Bad group name: %s' % group_name)
         versions = []
         rs = self.get_latest_schema_for_group(group_name)
-        versions.insert(0, rs)
-        cur_ver = rs.current_version(group_name)
-        if max_versions < 0:
-            first_ver = 1
-        else:
-            first_ver = cur_ver - max_versions + 1  # counting from 1, not 0
-            first_ver = 1 if first_ver < 1 else first_ver
-        for ver_num in sorted(range(first_ver, cur_ver), reverse=True):
-            schema = self.get_schema_for_group_and_version(group_name, ver_num)
-            versions.insert(0, schema)
+        if rs:
+            # there is a latest version
+            versions.insert(0, rs)
+            cur_ver = rs.current_version(group_name)
+            if max_versions < 0:
+                first_ver = 1
+            else:
+                first_ver = cur_ver - max_versions + 1  # counting from 1
+                first_ver = 1 if first_ver < 1 else first_ver
+            for ver_num in sorted(range(first_ver, cur_ver), reverse=True):
+                schema = self.get_schema_for_group_and_version(group_name,
+                                                               ver_num)
+                versions.insert(0, schema)
         return versions
 
     def get_all_version_sha256_ids_for_group(self, group_name):

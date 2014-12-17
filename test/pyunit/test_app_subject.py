@@ -253,8 +253,8 @@ class TestTASRSubjectApp(TASRTestCase):
         sha256_ids = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             meta = SchemaHeaderBot.extract_metadata(resp)
@@ -276,8 +276,8 @@ class TestTASRSubjectApp(TASRTestCase):
         versions = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             versions.append(resp.body.strip())
@@ -356,8 +356,7 @@ class TestTASRSubjectApp(TASRTestCase):
         self.abort_diff_status(resp, 201)
         meta = SchemaHeaderBot.extract_metadata(resp)
         cur_ver = meta.group_version(self.event_type)
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         url = '%s/register_if_latest/%s' % (self.subject_url, cur_ver)
         resp = self.tasr_app.request(url, method='PUT',
                                      content_type=self.content_type,
@@ -372,8 +371,7 @@ class TestTASRSubjectApp(TASRTestCase):
         self.abort_diff_status(resp, 201)
         meta = SchemaHeaderBot.extract_metadata(resp)
         bad_ver = meta.group_version(self.event_type) + 1
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         url = '%s/register_if_latest/%s' % (self.subject_url, bad_ver)
         resp = self.tasr_app.request(url, method='PUT',
                                      content_type=self.content_type,
@@ -387,8 +385,7 @@ class TestTASRSubjectApp(TASRTestCase):
         '''
         resp = self.register_schema(self.event_type, self.schema_str)
         self.abort_diff_status(resp, 201)
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         resp = self.register_schema(self.event_type, schema_str_2)
         self.abort_diff_status(resp, 201)
         meta = SchemaHeaderBot.extract_metadata(resp)
@@ -409,9 +406,7 @@ class TestTASRSubjectApp(TASRTestCase):
         canonicalized_schema_str = resp.body
         meta_1 = SchemaHeaderBot.extract_metadata(resp)
         self.assertEqual(1, meta_1.group_version(self.event_type), 'bad ver')
-
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         resp = self.register_schema(self.event_type, schema_str_2)
         self.abort_diff_status(resp, 201)
         # get by POSTed schema
@@ -466,8 +461,8 @@ class TestTASRSubjectApp(TASRTestCase):
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             # schema str with canonicalized whitespace returned
@@ -499,8 +494,7 @@ class TestTASRSubjectApp(TASRTestCase):
         '''GET /tasr/subject/<subject>/version/<version> - 1 schema, 2 vers'''
         resp = self.register_schema(self.event_type, self.schema_str)
         self.abort_diff_status(resp, 201)
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         resp = self.register_schema(self.event_type, schema_str_2)
         self.abort_diff_status(resp, 201)
         resp = self.register_schema(self.event_type, self.schema_str)
@@ -524,8 +518,8 @@ class TestTASRSubjectApp(TASRTestCase):
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             ver_meta = SchemaHeaderBot.extract_metadata(resp)
@@ -550,8 +544,8 @@ class TestTASRSubjectApp(TASRTestCase):
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             ver_meta = SchemaHeaderBot.extract_metadata(resp)
@@ -582,8 +576,7 @@ class TestTASRSubjectApp(TASRTestCase):
         self.abort_diff_status(resp, 201)
 
         # reg a second schema so we could get a stale version
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         resp = self.register_schema(self.event_type, schema_str_2)
         self.abort_diff_status(resp, 201)
 

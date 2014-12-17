@@ -152,8 +152,8 @@ class TestTASRCoreApp(TASRTestCase):
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             ver_meta = SchemaHeaderBot.extract_metadata(resp)
@@ -178,8 +178,8 @@ class TestTASRCoreApp(TASRTestCase):
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 50):
-            ver_schema_str = self.schema_str.replace('tagged.events',
-                                                     'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
             self.abort_diff_status(resp, 201)
             ver_meta = SchemaHeaderBot.extract_metadata(resp)
@@ -210,8 +210,7 @@ class TestTASRCoreApp(TASRTestCase):
         meta_1 = SchemaHeaderBot.extract_metadata(resp)
         self.assertEqual(1, meta_1.group_version(self.event_type), 'bad ver')
 
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         resp = self.register_schema(self.event_type, schema_str_2)
         self.abort_diff_status(resp, 201)
         # get by POSTed schema
@@ -235,8 +234,7 @@ class TestTASRCoreApp(TASRTestCase):
         meta_1 = SchemaHeaderBot.extract_metadata(resp)
         self.assertEqual(1, meta_1.group_version(self.event_type), 'bad ver')
 
-        schema_str_2 = self.schema_str.replace('tagged.events',
-                                               'tagged.events.alt', 1)
+        schema_str_2 = self.get_schema_permutation(self.schema_str)
         resp = self.register_schema(self.event_type, schema_str_2)
         self.abort_diff_status(resp, 201)
         # get by POSTed schema

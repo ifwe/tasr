@@ -8,7 +8,6 @@ from client_test import TestTASRAppClient
 
 import unittest
 import tasr.client
-import copy
 import httmock
 
 
@@ -143,9 +142,8 @@ class TestTASRClientObject(TestTASRAppClient):
             schemas = []
             sha256_ids = []
             for v in range(1, 50):
-                ver_schema_str = copy.copy(self.schema_str)
-                ver_schema_str = ver_schema_str.replace('tagged.events',
-                                                        'tagged.%s' % v, 1)
+                ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                             "fn_%s" % v)
                 # whitespace gets normalized, so do that locally to the
                 # submitted schema string so we have an accurate target for
                 # comparison
@@ -173,9 +171,8 @@ class TestTASRClientObject(TestTASRAppClient):
             client = tasr.client.TASRClientSV(self.host, self.port)
             test_schema_strs = []
             for v in range(1, 50):
-                ver_schema_str = copy.copy(self.schema_str)
-                ver_schema_str = ver_schema_str.replace('tagged.events',
-                                                        'tagged.%s' % v, 1)
+                ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                             "fn_%s" % v)
                 # whitespace gets normalized, so do that locally to the
                 # submitted schema string so we have an accurate target for
                 # comparison
@@ -237,9 +234,7 @@ class TestTASRClientObject(TestTASRAppClient):
         self.obj_register_schema_skeleton(self.schema_str)
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client.TASRClientSV(self.host, self.port)
-            alt_schema_str = copy.copy(self.schema_str)
-            alt_schema_str = alt_schema_str.replace('tagged.events',
-                                                    'tagged.alt', 1)
+            alt_schema_str = self.get_schema_permutation(self.schema_str)
             cur_latest_ver = 1
             rs = client.register_schema_if_latest_version(self.event_type,
                                                           cur_latest_ver,
@@ -249,9 +244,7 @@ class TestTASRClientObject(TestTASRAppClient):
     def test_obj_fail_register_schema_if_latest_stale_version(self):
         '''TASRClientSV.register_schema_if_latest_version() - as expected'''
         self.obj_register_schema_skeleton(self.schema_str)
-        alt_schema_str = copy.copy(self.schema_str)
-        alt_schema_str = alt_schema_str.replace('tagged.events',
-                                                'tagged.alt', 1)
+        alt_schema_str = self.get_schema_permutation(self.schema_str)
         self.obj_register_schema_skeleton(alt_schema_str)
         # so cur ver is now 2
         with httmock.HTTMock(self.route_to_testapp):
@@ -271,9 +264,7 @@ class TestTASRClientObject(TestTASRAppClient):
         # so cur ver is now 1
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client.TASRClientSV(self.host, self.port)
-            alt_schema_str = copy.copy(self.schema_str)
-            alt_schema_str = alt_schema_str.replace('tagged.events',
-                                                    'tagged.alt', 1)
+            alt_schema_str = self.get_schema_permutation(self.schema_str)
             bad_ver = 2
             try:
                 client.register_schema_if_latest_version(self.event_type,
@@ -314,9 +305,8 @@ class TestTASRClientObject(TestTASRAppClient):
         '''TASRClientSV.get_schema_for_topic() - multiple versions'''
         schemas = []
         for v in range(1, 50):
-            ver_schema_str = copy.copy(self.schema_str)
-            ver_schema_str = ver_schema_str.replace('tagged.events',
-                                                    'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             # whitespace gets normalized, so do that locally to the submitted
             # schema string so we have an accurate target for comparison
             ras = tasr.registered_schema.RegisteredAvroSchema()
@@ -337,9 +327,7 @@ class TestTASRClientObject(TestTASRAppClient):
 
     def test_obj_lookup_by_version_old_version(self):
         '''TASRClientSV.get_schema_for_topic() - non-sequential re-reg'''
-        alt_schema_str = copy.copy(self.schema_str)
-        alt_schema_str = alt_schema_str.replace('tagged.events',
-                                                'tagged.events.alt', 1)
+        alt_schema_str = self.get_schema_permutation(self.schema_str)
         rs1 = self.obj_register_schema_skeleton(self.schema_str)
         self.obj_register_schema_skeleton(alt_schema_str)
         rs3 = self.obj_register_schema_skeleton(self.schema_str)
@@ -358,9 +346,8 @@ class TestTASRClientObject(TestTASRAppClient):
         sha256_ids = []
         schemas = []
         for v in range(1, 50):
-            ver_schema_str = copy.copy(self.schema_str)
-            ver_schema_str = ver_schema_str.replace('tagged.events',
-                                                    'tagged.events.%s' % v, 1)
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
             # whitespace gets normalized, so do that locally to the submitted
             # schema string so we have an accurate target for comparison
             ras = tasr.registered_schema.RegisteredAvroSchema()
@@ -387,9 +374,7 @@ class TestTASRClientObject(TestTASRAppClient):
 
     def test_bare_lookup_latest(self):
         self.obj_register_schema_skeleton(self.schema_str)
-        alt_schema_str = copy.copy(self.schema_str)
-        alt_schema_str = alt_schema_str.replace('tagged.events',
-                                                'tagged.alt', 1)
+        alt_schema_str = self.get_schema_permutation(self.schema_str)
         self.obj_register_schema_skeleton(alt_schema_str)
         # so cur ver is now 2
         with httmock.HTTMock(self.route_to_testapp):
