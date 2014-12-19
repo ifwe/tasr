@@ -10,61 +10,16 @@ values for the host or port.
 '''
 
 import requests
+import tasr.app
 from tasr.registered_schema import RegisteredAvroSchema
 from tasr.headers import SubjectHeaderBot, SchemaHeaderBot
+from tasr.client import TASRError, reg_schema_from_url
 
-TASR_HOST = 'localhost'
-TASR_PORT = 8080
+APP = tasr.app.TASR_APP
+APP.set_config_mode('local')
+TASR_HOST = APP.config.host
+TASR_PORT = APP.config.port
 TIMEOUT = 2  # seconds
-
-
-class TASRError(Exception):
-    '''Something went wrong with a TASR interaction'''
-
-
-def reg_schema_from_url(url, method='GET', data=None, headers=None,
-                 timeout=TIMEOUT, err_404='No such object.'):
-    '''A generic method to call a URL and transform the reply into a
-    RegisteredSchema object.  Most of the API calls can use this skeleton.
-    '''
-    schema_str = None
-    resp = None
-    try:
-        if method.upper() == 'GET':
-            resp = requests.get(url, timeout=timeout)
-            schema_str = resp.content
-        elif method.upper() == 'POST':
-            resp = requests.post(url, data=data, headers=headers,
-                                 timeout=timeout)
-            schema_str = resp.content
-        elif method.upper() == 'PUT':
-            resp = requests.put(url, data=data, headers=headers,
-                                timeout=timeout)
-            schema_str = resp.content
-
-        # check for error cases
-        if resp == None:
-            raise TASRError('Timeout for request to %s' % url)
-        if 404 == resp.status_code:
-            raise TASRError(err_404)
-        if not resp.status_code in [200, 201]:
-            raise TASRError('Failed request to %s (status code: %s)' %
-                            (url, resp.status_code))
-        # OK - so construct the RS and return it
-        ras = RegisteredAvroSchema()
-        ras.schema_str = schema_str
-        ras.created = True if resp.status_code == 201 else False
-        schema_meta = SchemaHeaderBot.extract_metadata(resp)
-        if schema_str and not schema_meta.sha256_id == ras.sha256_id:
-            raise TASRError('Schema was modified in transit.')
-        ras.update_dicts_from_schema_metadata(schema_meta)
-        return ras
-    except Exception as exc:
-        raise TASRError(exc)
-
-#############################################################################
-# TASR Topic API methods (legacy)
-#############################################################################
 
 
 def get_active_topics(host=TASR_HOST, port=TASR_PORT, timeout=TIMEOUT):
@@ -184,13 +139,13 @@ def schema_for_schema_str(schema_str, object_on_miss=False,
         ras = RegisteredAvroSchema()
         ras.schema_str = resp.context
         schema_meta = SchemaHeaderBot.extract_metadata(resp)
-        ras.update_dicts_from_schema_metadata(schema_meta)
+        ras.update_from_schema_metadata(schema_meta)
         return ras
     elif 404 == resp.status_code and object_on_miss:
         ras = RegisteredAvroSchema()
         ras.schema_str = schema_str
         schema_meta = SchemaHeaderBot.extract_metadata(resp)
-        ras.update_dicts_from_schema_metadata(schema_meta)
+        ras.update_from_schema_metadata(schema_meta)
         return ras
     raise TASRError('Schema not registered to any topics.')
 

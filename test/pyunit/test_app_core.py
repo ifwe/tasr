@@ -494,5 +494,5 @@ class TestTASRCoreApp(TASRTestCase):
                              'Expected group_names in body to match headers.')
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRCoreApp)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    SUITE = unittest.TestLoader().loadTestsFromTestCase(TestTASRCoreApp)
+    unittest.TextTestRunner(verbosity=2).run(SUITE)

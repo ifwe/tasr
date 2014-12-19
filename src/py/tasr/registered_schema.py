@@ -116,9 +116,9 @@ class RegisteredSchema(object):
         '''
         if rs_dict:
             self.schema_str = rs_dict.pop('schema', self.schema_str)
-            self.update_dicts_from_schema_metadata(SchemaMetadata(rs_dict))
+            self.update_from_schema_metadata(SchemaMetadata(rs_dict))
 
-    def update_dicts_from_schema_metadata(self, metadata):
+    def update_from_schema_metadata(self, metadata):
         '''Updates the topic-version and topic-timestamp fields in the RS
         object based on gv_dict and ts_dict passed in a SchemaMetadata object.
         '''
@@ -364,11 +364,14 @@ class RegisteredAvroSchema(RegisteredSchema):
 
     @staticmethod
     def is_valid_avro_schema(schema_str):
+        '''Checks whether the passed string is valid Avro (can be parsed).'''
         test_schema = RegisteredAvroSchema()
         test_schema.schema_str = schema_str
         try:
             return test_schema.validate_schema_str()
-        except:
+        except ValueError:
+            return False
+        except avro.schema.SchemaParseException:
             return False
 
 
@@ -412,6 +415,12 @@ class MasterAvroSchema(RegisteredAvroSchema):
     Note that there are legacy schema versions with a union type, allowing
     nulls, but no default.  These are allowed as old versions, but when
     present in the current object make it non-back-compatible.
+
+    ADDENDUM: We do support map fields, but we don't support evolution of those
+    fields.  That is, once a field with a map type (or a union of null and a
+    map type) is added, it has to remain unchanged to be "compatible" in this
+    context.  This is not strictly the same thing as Avro compatibility, but
+    is the right definition of compatibility for our purposes.
     '''
 
     def __init__(self, slist):
@@ -424,17 +433,23 @@ class MasterAvroSchema(RegisteredAvroSchema):
         self.part_field = None
         self.required_fields = dict()
         self.opt_fields = dict()
+        self.complex_fields = dict()
+        self.map_fields = dict()
         self.field_name_list = None
         self.deleted_field_names = None
         # if one was provided, set it
         self.set_schema_list(slist)
 
     def set_schema_list(self, slist):
+        '''Sets the list of RegisteredAvroSchema objects that make up the
+        versions spanned by the MasterAvroSchema.  If the list includes a non-
+        compatible schema ordering, a ValueError will be raised.'''
         if slist == None or not isinstance(slist, list) or len(slist) == 0:
             self.schema_list = None
             logging.debug('Not a list.')
             return
-        is_first_ver = True
+
+        is_first_version = True
         self.schema_list = []
         for elem in slist:
             ras = None
@@ -449,77 +464,71 @@ class MasterAvroSchema(RegisteredAvroSchema):
             if not ras.canonical_schema_str:  # also ensures ordered available
                 raise ValueError('RAS has no canonical schema string')
 
+            # we use the ordered dict as a convenient way to check the version
             ver = ras.ordered
-            # check non-field entities
-            if not ('namespace' in ver and 'type' in ver and 'name' in ver):
-                raise ValueError('Missing non-field elements.')
-            elif (self.e_namespace == None
-                  and self.e_type == None
-                  and self.e_name == None):
+            if not basic_schema_dict_valid(ver, mas=self):
+                raise ValueError('Non-field element mismatch.')
+            if (self.e_namespace == None
+                and self.e_type == None
+                and self.e_name == None):
                 self.e_namespace = ver['namespace']
                 self.e_type = ver['type']
                 self.e_name = ver['name']
-            else:
-                if (self.e_namespace != ver['namespace']
-                    or self.e_type != ver['type']
-                    or self.e_name != ver['name']):
-                    raise ValueError('Non-field element mismatch.')
 
             # check present fields
-            if not ('fields' in ver and isinstance(ver['fields'], list)):
-                raise ValueError('No fields element.')
             self.field_name_list = []
             for field in ver['fields']:
-                if not 'name' in field:
-                    raise ValueError('Field name missing.')
-                name = field['name']
-                self.field_name_list.append(name)
-                if not 'type' in field:
-                    raise ValueError('Type missing for %s.' % name)
-                if isinstance(field['type'], list):
-                    # so, OPT or REQ*, should have a union of null and a type
-                    if not 'null' in field['type']:
-                        raise ValueError('%s missing null type.' % name)
-                    if not 'default' in field or field['default'] != None:
-                        logging.debug('Missing null default. Legacy REQ*, OK.')
-                        if field['name'] in self.opt_fields.keys():
-                            raise ValueError('OPT -> REQ* for %s' % name)
-                        if self.id_field and field == self.id_field:
-                            raise ValueError('ID -> REQ* for %s' % name)
-                        if self.part_field and field == self.part_field:
-                            raise ValueError('PART -> REQ* for %s' % name)
-                        self.required_fields[name] = field
-                        continue
-                    # it is an OPT field
-                    if self.id_field and field == self.id_field:
-                        raise ValueError('ID -> OPT for %s' % name)
-                    if self.part_field and field == self.part_field:
-                        raise ValueError('PART -> OPT for %s' % name)
-                    if name in self.required_fields.keys():
-                        # REQ -> OPT allowed transformation
-                        old_type = self.required_fields[name]['type']
-                        if not old_type in field['type']:
+                sfield = SchemaField(field, is_first_version)
+                self.field_name_list.append(sfield.name)
+                if sfield.is_complex:
+                    # we don't really check complex fields for compatibility,
+                    # you are on your own in this case
+                    self.complex_fields[sfield.name] = field
+                elif sfield.is_map:
+                    # map values need to remain unchanged to be compatible
+                    if sfield.name in self.map_fields.keys():
+                        old_values = self.map_fields[sfield.name]['values']
+                        if sfield.map_values != old_values:
+                            _msg = 'map values changed (%s)' % sfield.name
+                            raise ValueError(_msg)
+                elif sfield.is_required == False:
+                    # OPT field -- ID -> OPT and PART -> OPT are not allowed
+                    #if self.id_field and field == self.id_field:
+                    #    raise ValueError('ID -> OPT for %s' % sfield.name)
+                    #if self.part_field and field == self.part_field:
+                    #    raise ValueError('PART -> OPT for %s' % sfield.name)
+                    if sfield.name in self.required_fields.keys():
+                        # REQ -> OPT is allowed
+                        old_type = self.required_fields[sfield.name]['type']
+                        if not old_type in sfield.type:
                             raise ValueError('REQ -> OPT incompatible types')
-                        self.required_fields.pop(name)
-                        self.opt_fields[name] = field
-                    if name in self.opt_fields.keys():
+                        self.required_fields.pop(sfield.name)
+                        self.opt_fields[sfield.name] = field
+                    elif sfield.name in self.opt_fields.keys():
                         # OPT -> OPT, so check it's the same
-                        if self.opt_fields[name] != field:
+                        if self.opt_fields[sfield.name] != field:
                             raise ValueError('OPT field mismatch: %s != %s' %
-                                             (self.opt_fields[name], field))
-                    else:
-                        self.opt_fields[name] = field
-                else:
-                    # REQ field
-                    if name in self.required_fields.keys():
-                        if field != self.required_fields[name]:
-                            raise ValueError('REQ field mismatch: %s != %s' %
-                                             (self.required_fields[name],
+                                             (self.opt_fields[sfield.name],
                                               field))
-                    elif is_first_ver:
-                        self.required_fields[name] = field
+                    else:
+                        # new OPT field
+                        self.opt_fields[sfield.name] = field
+
+                elif sfield.is_required:
+                    if sfield.name in self.required_fields.keys():
+                        # never allow REQ -> REQ' changes
+                        if field != self.required_fields[sfield.name]:
+                            _msg = ('REQ field mismatch: %s != %s' %
+                                    (self.required_fields[sfield.name], field))
+                            raise ValueError(_msg)
+                    elif is_first_version:
+                        # allow new REQ fields in ver 1
+                        self.required_fields[sfield.name] = field
                     else:
                         raise ValueError('Cannot add REQ fields after ver 1.')
+                else:
+                    # shouldn't happen
+                    raise ValueError('WTF?  %s' % field)
                 # end of present fields loop -- check for disallowed deletion
                 if self.id_field:
                     if not self.id_field['name'] in self.field_name_list:
@@ -527,7 +536,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
                 if self.part_field:
                     if not self.part_field['name'] in self.field_name_list:
                         raise ValueError('Cannot delete PART field.')
-            is_first_ver = False
+            is_first_version = False
             # end of ver loop
 
             # build deleted fields list
@@ -554,15 +563,17 @@ class MasterAvroSchema(RegisteredAvroSchema):
                 elif fname in self.opt_fields:
                     mfields.append(self.opt_fields[fname])
             # now create the ordered dict holding it all
-            od = collections.OrderedDict()
-            od['namespace'] = self.e_namespace
-            od['type'] = self.e_type
-            od['name'] = self.e_name
-            od['fields'] = mfields
+            odict = collections.OrderedDict()
+            odict['namespace'] = self.e_namespace
+            odict['type'] = self.e_type
+            odict['name'] = self.e_name
+            odict['fields'] = mfields
             # and from that, set the schema_str
-            self.schema_str = json.dumps(od)
+            self.schema_str = json.dumps(odict)
 
     def is_compatible(self, obj):
+        '''Tests whether a passed RegisteredAvroSchema object is a compatible
+        extension to the MasterAvroSchema object.'''
         if self.schema_list == None:
             raise ValueError('No versions in master.')
 
@@ -576,59 +587,151 @@ class MasterAvroSchema(RegisteredAvroSchema):
             return False
 
         ver = obj.ordered
-        if not ('namespace' in ver and 'type' in ver and 'name' in ver):
-            logging.debug('Missing non-field element(s).')
+        if not basic_schema_dict_valid(ver, mas=self):
             return False
-        else:
-            if (self.e_namespace != ver['namespace']
-                or self.e_type != ver['type']
-                or self.e_name != ver['name']):
-                logging.debug('Non-field element mismatch.')
-                return False
 
         # check fields
-        if not ('fields' in ver and isinstance(ver['fields'], list)):
-            logging.debug('Does not have a fields element.')
-            return False
         for field in ver['fields']:
-            if not 'name' in field:
-                logging.debug('Field name missing.')
-                return False
-            fname = field['name']
-            if not 'type' in field:
-                logging.debug('Type missing for %s field.', fname)
-                return False
-            if isinstance(field['type'], list):
-                # OPT should have a union of null and a type
-                if not 'null' in field['type']:
-                    logging.debug('Missing null type.')
-                    return False
-                if not 'default' in field or field['default'] != None:
-                    logging.debug('Missing null default.')
-                    return False
+            try:
+                sfield = SchemaField(field)
+                if sfield.is_complex:
+                    # we don't really check complex fields for compatibility,
+                    # you are on your own in this case
+                    logging.debug('complex field %s', sfield.name)
+                    continue
+                elif sfield.is_map:
+                    # map values need to remain unchanged to be compatible
+                    if sfield.name in self.map_fields.keys():
+                        old_values = self.map_fields[sfield.name]['values']
+                        if sfield.map_values != old_values:
+                            _msg = 'map values changed (%s)' % sfield.name
+                            logging.debug(_msg)
+                            return False
+                elif sfield.is_required == False:
+                    if sfield.name in self.required_fields.keys():
+                        # REQ -> OPT is allowed
+                        old_type = self.required_fields[sfield.name]['type']
+                        if not old_type in sfield.type:
+                            logging.debug('REQ -> OPT incompatible types')
+                            return False
+                    elif sfield.name in self.opt_fields.keys():
+                        # OPT -> OPT, so check it's the same
+                        if self.opt_fields[sfield.name] != field:
+                            logging.debug('OPT field mismatch: %s != %s',
+                                          self.opt_fields[sfield.name], field)
+                            return False
+                    else:
+                        # new OPT field
+                        pass
 
-                # TODO: check ID and PART fields remain the same
-
-                if fname in self.required_fields.keys():
-                    # REQ -> OPT allowed transformation
-                    old_type = self.required_fields[fname]['type']
-                    if not old_type in field['type']:
-                        logging.debug('REQ -> OPT incompatible types')
-                        return False
-                if fname in self.opt_fields.keys():
-                    # OPT -> OPT, so check it's the same
-                    if self.opt_fields[fname] != field:
-                        logging.debug('OPT field mismatch: %s != %s',
-                                      self.opt_fields[fname], field)
-                        return False
-            else:
-                # REQ field
-                if fname in self.required_fields.keys():
-                    if field != self.required_fields[fname]:
-                        logging.debug('REQ field mismatch: %s != %s',
-                                      self.required_fields[fname], field)
+                elif sfield.is_required:
+                    if sfield.name in self.required_fields.keys():
+                        # never allow REQ -> REQ' changes
+                        if field != self.required_fields[sfield.name]:
+                            logging.debug('REQ field mismatch: %s != %s',
+                                          self.required_fields[sfield.name],
+                                          field)
+                            return False
+                    else:
+                        logging.debug('Cannot add REQ fields after ver 1.')
                         return False
                 else:
-                    logging.debug('Cannot add fixed fields in later versions.')
-                    return False
+                    # shouldn't happen
+                    raise ValueError('WTF?  %s' % field)
+            except ValueError as verr:
+                logging.warn(verr)
+                return False
         return True
+
+
+def basic_schema_dict_valid(sdict, mas=None):
+    '''Checks that a schema dict has the basic required elements.  If a MAS is
+    specified, ensure the name, namespace and type have not changed.'''
+    if not ('namespace' in sdict and 'type' in sdict and 'name' in sdict):
+        logging.debug('Missing non-field element(s).')
+        return False
+    if mas and mas.e_namespace and mas.e_namespace != sdict['namespace']:
+        logging.debug('namespace mismatch')
+        return False
+    if mas and mas.e_name and mas.e_name != sdict['name']:
+        logging.debug('name mismatch')
+        return False
+    if mas and mas.e_type and mas.e_type != sdict['type']:
+        logging.debug('type mismatch')
+        return False
+    if not ('fields' in sdict and isinstance(sdict['fields'], list)):
+        logging.debug('Does not have a fields element.')
+        return False
+    return True
+
+
+class SchemaField(dict):
+    def __init__(self, obj=None, allow_defaultless_opt=False):
+        super(SchemaField, self).__init__()
+        self.is_part = None
+        self.is_id = None
+        self.is_required = None
+        self.allow_defaultless_opt = allow_defaultless_opt
+        self.is_defaultless_opt = None
+        self.is_complex = None
+        self.is_map = None
+        self.name = None
+        self.type = None
+        self.opt_type = None
+        self.default = None
+        self.map_values = None
+        if obj:
+            self.set_all(obj)
+
+    def set_all(self, obj):
+        if obj and isinstance(obj, dict):
+            for k, v in obj.iteritems():
+                self[k] = v
+                if k.lower() == 'name':
+                    self.name = self[k]
+                if k.lower() == 'type':
+                    self.type = self[k]
+                if k.lower() == 'default':
+                    self.default = self[k]
+        if not self.name:
+            raise ValueError("must define a name")
+        if not self.type:
+            raise ValueError("must define a type (%s)" % self.name)
+        if isinstance(self.type, list):
+            # OPT fields
+            if not "null" in self.type:
+                if self.allow_defaultless_opt:
+                    self.is_defaultless_opt = True
+                else:
+                    raise ValueError("union without a null (%s)" % self.name)
+            if not "default" in self.keys():
+                raise ValueError("union with no default (%s)" % self.name)
+            if not self.default == None:
+                raise ValueError("union with bad default (%s)" % self.name)
+            if not len(self.type) == 2:
+                raise ValueError("bad OPT type: %s (%s)" % (self.type,
+                                                            self.name))
+            # we have a valid OPT field
+            self.is_required = False
+            for utype in self.type:
+                if not utype == "null":
+                    self.opt_type = utype
+                    break
+            if self.opt_type and (isinstance(self.opt_type, dict) or
+                                  isinstance(self.opt_type, list)):
+                self.is_complex = True
+            else:
+                self.is_complex = False
+        elif self.type == 'map':
+            # REQ map field
+            if not "values" in self.keys():
+                raise ValueError("map with no values (%s)" % self.name)
+            self.map_values = self["values"]
+            self.is_complex = False
+            self.is_required = True
+            self.is_map = True
+        else:
+            # REQ field
+            self.is_complex = False
+            self.is_required = True
+            self.is_map = False

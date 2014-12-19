@@ -403,5 +403,5 @@ class TestTASRClientMethods(TestTASRAppClient):
             self.assertEqual(2, rs.current_version(self.event_type), 'bad ver')
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRClientMethods)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    SUITE = unittest.TestLoader().loadTestsFromTestCase(TestTASRClientMethods)
+    unittest.TextTestRunner(verbosity=2).run(SUITE)

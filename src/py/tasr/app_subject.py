@@ -18,6 +18,7 @@ import tasr.app_core
 import tasr.app_wsgi
 import tasr.group
 import tasr.headers
+import tasr.registered_schema
 
 
 ##############################################################################
@@ -73,14 +74,14 @@ def request_data_to_dict():
         try:
             json_body = bottle.request.body.getvalue()
             dct = json.loads(json_body)
-        except:
+        except ValueError:
             pass
     else:
         # by default assume a HTML form has been passed with the request
         for key in bottle.request.forms.keys():
             plist = bottle.request.forms.getall(key)
             if len(plist) > 1:
-                TASR_SUBJECT_APP.abort(400, 'Multiple values for %s key.' % key)
+                TASR_SUBJECT_APP.abort(400, 'Multiple values for %s key' % key)
             if len(plist) == 1:
                 dct[key] = plist[0]
     return dct
@@ -233,7 +234,26 @@ def all_subject_schemas(subject_name=None):
     return TASR_SUBJECT_APP.object_response(schema_list, jobj_list)
 
 
+@TASR_SUBJECT_APP.get('/<subject_name>/master')
+def subject_master_schema(subject_name=None):
+    '''Get the MasterAvroSchema for all the versions.  This includes all of
+    the fields defined in any version for the group.  This can be used to
+    build the Hive tables that cover all the versions.'''
+    abort_if_subject_bad(subject_name)
+    asr = TASR_SUBJECT_APP.ASR
+    versions = asr.get_latest_schema_versions_for_group(subject_name, -1)
+    mas = tasr.registered_schema.MasterAvroSchema(versions)
+    if not mas:
+        TASR_SUBJECT_APP.abort(404, ('No versions registered for subject %s.'
+                                     % subject_name))
+    return TASR_SUBJECT_APP.object_response(mas.canonical_schema_str,
+                                            mas.ordered, 'application/json')
+
+
 def is_back_compatible(subject_name, schema_str):
+    '''A convenience method that checks whether a given schema string is back
+    compatible with all the previously registered schema versions.  This is
+    used whenever we are considering registering a new schema version.'''
     asr = TASR_SUBJECT_APP.ASR
     # instantiate a RAS object with the passed schema string
     unreg_schema = asr.instantiate_registered_schema()

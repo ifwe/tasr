@@ -182,5 +182,6 @@ class TestTASRLegacyClientMethods(TestTASRAppClient):
                         'Expected different current version value.')
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRLegacyClientMethods)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    LOADER = unittest.TestLoader()
+    SUITE = LOADER.loadTestsFromTestCase(TestTASRLegacyClientMethods)
+    unittest.TextTestRunner(verbosity=2).run(SUITE)

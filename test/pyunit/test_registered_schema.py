@@ -22,9 +22,6 @@ class TestRegisteredAvroSchema(TASRTestCase):
         self.schema_str = self.avsc_file.read()
         self.schema_version = 0
         self.expect_sha256_id = 'IEAsvOGuZfJFblDinapW428TgEn19HQX/AWBKzDeIzCR'
-        self.extra_field_dict = {"name": "gold__extra_field",
-                                 "type": ["null", "string"],
-                                 "default": None}
 
     def test_create(self):
         RegisteredAvroSchema()
@@ -49,10 +46,8 @@ class TestRegisteredAvroSchema(TASRTestCase):
         ras = RegisteredAvroSchema()
         ras.schema_str = self.schema_str
         # create schema with extra field added
-        jd = json.loads(self.schema_str)
-        jd['fields'].append(self.extra_field_dict)
         new_ras = RegisteredAvroSchema()
-        new_ras.schema_str = json.dumps(jd)
+        new_ras.schema_str = self.get_schema_permutation(self.schema_str)
         self.assertTrue(MasterAvroSchema([ras, ]).is_compatible(new_ras),
                         'expected new schema to be back-compatible')
         # and confirm that it works with the convenience method
@@ -64,10 +59,9 @@ class TestRegisteredAvroSchema(TASRTestCase):
         ras = RegisteredAvroSchema()
         ras.schema_str = self.schema_str
         # create schema with extra field added
-        jd = json.loads(self.schema_str)
-        jd['fields'].append(self.extra_field_dict)
         new_ras = RegisteredAvroSchema()
-        new_ras.schema_str = json.dumps(jd)
+        new_ras.schema_str = self.get_schema_permutation(self.schema_str)
+        # we reverse the order, using "new" as the pre-existing schema
         self.assertTrue(MasterAvroSchema([new_ras, ]).is_compatible(ras),
                         'expected schema to be back-compatible')
         # and confirm that it works with the convenience method
@@ -80,7 +74,7 @@ class TestRegisteredAvroSchema(TASRTestCase):
         ras.schema_str = self.schema_str
         # create schema with extra field added
         jd = json.loads(self.schema_str)
-        non_nullable_field_dict = {"name": "gold__extra_field",
+        non_nullable_field_dict = {"name": "gold__extra",
                                    "type": "string"}
         jd['fields'].append(non_nullable_field_dict)
         new_ras = RegisteredAvroSchema()
@@ -98,16 +92,16 @@ class TestRegisteredAvroSchema(TASRTestCase):
         ras.schema_str = self.schema_str
         # create first schema with extra, non-nullable field added
         jd = json.loads(self.schema_str)
-        non_nullable_field_dict = {"name": "gold__extra_field",
+        non_nullable_field_dict = {"name": "gold__extra",
                                    "type": "string"}
         jd['fields'].append(non_nullable_field_dict)
         first_ras = RegisteredAvroSchema()
         first_ras.schema_str = json.dumps(jd)
         # now create second schema, with the extra field made nullable
-        jd2 = json.loads(self.schema_str)
-        jd2['fields'].append(self.extra_field_dict)
         second_ras = RegisteredAvroSchema()
-        second_ras.schema_str = json.dumps(jd2)
+        second_ras.schema_str = self.get_schema_permutation(self.schema_str,
+                                                            "gold__extra",
+                                                            "string")
         # the base ras is the third (newest) schema in the sequence
         mas = MasterAvroSchema([first_ras, second_ras])
         self.assertTrue(mas.is_compatible(ras),
@@ -133,7 +127,7 @@ class TestRegisteredAvroSchema(TASRTestCase):
         ras.schema_str = self.schema_str
         # create schema with extra field added
         jd = json.loads(self.schema_str)
-        non_nullable_field_dict = {"name": "gold__extra_field",
+        non_nullable_field_dict = {"name": "gold__extra",
                                    "type": "string"}
         jd['fields'].append(non_nullable_field_dict)
         new_ras = RegisteredAvroSchema()
@@ -152,14 +146,14 @@ class TestRegisteredAvroSchema(TASRTestCase):
         '''Changing the type of a field is not allowed.'''
         # create schema with a string field added
         jd = json.loads(self.schema_str)
-        string_field_dict = {"name": "gold__extra_field",
+        string_field_dict = {"name": "gold__extra",
                              "type": "string"}
         jd['fields'].append(string_field_dict)
         str_ras = RegisteredAvroSchema()
         str_ras.schema_str = json.dumps(jd)
         # create a new schema where the field is an int type
         jd2 = json.loads(self.schema_str)
-        int_field_dict = {"name": "gold__extra_field",
+        int_field_dict = {"name": "gold__extra",
                           "type": "int"}
         jd2['fields'].append(int_field_dict)
         int_ras = RegisteredAvroSchema()
@@ -177,18 +171,15 @@ class TestRegisteredAvroSchema(TASRTestCase):
     def test_not_compatible_with_nullable_field_type_change(self):
         '''Changing the type of a field is not allowed.'''
         # create schema with a string field added
-        jd = json.loads(self.schema_str)
-        jd['fields'].append(self.extra_field_dict)  # type is [null, string]
         str_ras = RegisteredAvroSchema()
-        str_ras.schema_str = json.dumps(jd)
+        str_ras.schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "gold__extra",
+                                                         "string")
         # create a new schema where the field is a nullable int type
-        jd2 = json.loads(self.schema_str)
-        int_field_dict = {"name": "gold__extra_field",
-                          "type": ["null", "int"],
-                          "default": None}
-        jd2['fields'].append(int_field_dict)
         int_ras = RegisteredAvroSchema()
-        int_ras.schema_str = json.dumps(jd2)
+        int_ras.schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "gold__extra",
+                                                         "int")
         self.assertFalse(MasterAvroSchema([str_ras, ]).is_compatible(int_ras),
                          'expected schema to NOT be back-compatible')
         self.assertFalse(int_ras.back_compatible_with(str_ras),
@@ -199,7 +190,85 @@ class TestRegisteredAvroSchema(TASRTestCase):
         self.assertFalse(str_ras.back_compatible_with(int_ras),
                          'expected schema to NOT be back-compatible')
 
+    def test_required_map_field_is_self_compatible(self):
+        '''Check that schemas with a required map field type are compatible.'''
+        jd = json.loads(self.schema_str)
+        req_map_field_dict = {"name": "extra",
+                          "type": "map",
+                          "values": "string"}
+        jd['fields'].append(req_map_field_dict)
+        ras = RegisteredAvroSchema()
+        ras.schema_str = json.dumps(jd)
+        self.assertTrue(MasterAvroSchema([ras, ]).is_compatible(ras),
+                        'expected schema to be back-compatible with self')
+        # and confirm that it works with the convenience method
+        self.assertTrue(ras.back_compatible_with(ras),
+                        'expected schema to be back-compatible with self')
+
+    def test_nullable_map_values_field_is_self_compatible(self):
+        '''Check that schemas with a required map field type are compatible.'''
+        jd = json.loads(self.schema_str)
+        opt_values_map_field_dict = {"name": "extra",
+                          "type": "map",
+                          "values": ["null", "string"],
+                          "default": None}
+        jd['fields'].append(opt_values_map_field_dict)
+        ras = RegisteredAvroSchema()
+        ras.schema_str = json.dumps(jd)
+        self.assertTrue(MasterAvroSchema([ras, ]).is_compatible(ras),
+                        'expected schema to be back-compatible with self')
+        # and confirm that it works with the convenience method
+        self.assertTrue(ras.back_compatible_with(ras),
+                        'expected schema to be back-compatible with self')
+
+    def test_nullable_map_field_is_self_compatible(self):
+        '''Check that schemas with a required map field type are compatible.'''
+        jd = json.loads(self.schema_str)
+        opt_map_field_dict = {"name": "extra",
+                              "type": ["null",
+                                       {"type": "map",
+                                        "default": None,
+                                        "values": ["null", "string"]
+                                        }
+                                       ],
+                              "default": None}
+        jd['fields'].append(opt_map_field_dict)
+        ras = RegisteredAvroSchema()
+        ras.schema_str = json.dumps(jd)
+        self.assertTrue(MasterAvroSchema([ras, ]).is_compatible(ras),
+                        'expected schema to be back-compatible with self')
+        # and confirm that it works with the convenience method
+        self.assertTrue(ras.back_compatible_with(ras),
+                        'expected schema to be back-compatible with self')
+
+    def test_req_to_opt_map_field_is_compatible(self):
+        '''Check that schemas with a required map field type are compatible.'''
+        req_jd = json.loads(self.schema_str)
+        req_map_field_dict = {"name": "extra",
+                          "type": "map",
+                          "values": "string"}
+        req_jd['fields'].append(req_map_field_dict)
+        req_ras = RegisteredAvroSchema()
+        req_ras.schema_str = json.dumps(req_jd)
+
+        opt_jd = json.loads(self.schema_str)
+        opt_map_field_dict = {"name": "extra",
+                          "type": "map",
+                          "values": ["null", "string"],
+                          "default": None}
+        opt_jd['fields'].append(opt_map_field_dict)
+        opt_ras = RegisteredAvroSchema()
+        opt_ras.schema_str = json.dumps(opt_jd)
+
+        self.assertTrue(MasterAvroSchema([req_ras, ]).is_compatible(opt_ras),
+                        'expected schema to be back-compatible with self')
+        # and confirm that it works with the convenience method
+        self.assertTrue(opt_ras.back_compatible_with(req_ras),
+                        'expected schema to be back-compatible with self')
+
+
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestRegisteredAvroSchema)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    LOADER = unittest.TestLoader()
+    SUITE = LOADER.loadTestsFromTestCase(TestRegisteredAvroSchema)
+    unittest.TextTestRunner(verbosity=2).run(SUITE)

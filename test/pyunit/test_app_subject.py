@@ -588,5 +588,5 @@ class TestTASRSubjectApp(TASRTestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRSubjectApp)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    SUITE = unittest.TestLoader().loadTestsFromTestCase(TestTASRSubjectApp)
+    unittest.TextTestRunner(verbosity=2).run(SUITE)

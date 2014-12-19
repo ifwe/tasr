@@ -198,5 +198,6 @@ class TestTASRLegacyClientObject(TestTASRAppClient):
                              'Expected version of 1.')
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestTASRLegacyClientObject)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    LOADER = unittest.TestLoader()
+    SUITE = LOADER.loadTestsFromTestCase(TestTASRLegacyClientObject)
+    unittest.TextTestRunner(verbosity=2).run(SUITE)
