@@ -173,6 +173,25 @@ def update_subject_config(subject_name=None):
     return TASR_SUBJECT_APP.subject_config_response(subject)
 
 
+@TASR_SUBJECT_APP.post('/<subject_name>/config/<key>')
+def update_subject_config_entry(subject_name=None, key=None):
+    '''Set or replace the value for the KEY in config dict for a subject.'''
+    subject = get_subject(subject_name)
+    subject.config[key] = bottle.request.body.getvalue()
+    TASR_SUBJECT_APP.ASR.update_subject_config(subject_name, subject.config)
+    return TASR_SUBJECT_APP.subject_config_response(subject)
+
+
+@TASR_SUBJECT_APP.get('/<subject_name>/config/<key>')
+def get_subject_config_entry(subject_name=None, key=None):
+    '''Get the value for the KEY in config dict for a subject.'''
+    subject = get_subject(subject_name)
+    if not key in subject.config:
+        TASR_SUBJECT_APP.abort(404, ('No %s in config for %s.'
+                                     % (key, subject_name)))
+    return subject.config[key]
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/integral')
 def subject_integral(subject_name=None):
     '''
@@ -242,12 +261,17 @@ def subject_master_schema(subject_name=None):
     abort_if_subject_bad(subject_name)
     asr = TASR_SUBJECT_APP.ASR
     versions = asr.get_latest_schema_versions_for_group(subject_name, -1)
-    mas = tasr.registered_schema.MasterAvroSchema(versions)
-    if not mas:
-        TASR_SUBJECT_APP.abort(404, ('No versions registered for subject %s.'
-                                     % subject_name))
-    return TASR_SUBJECT_APP.object_response(mas.canonical_schema_str,
-                                            mas.ordered, 'application/json')
+    try:
+        mas = tasr.registered_schema.MasterAvroSchema(versions)
+        if not mas:
+            TASR_SUBJECT_APP.abort(404, ('No versions registered for %s.'
+                                         % subject_name))
+        return TASR_SUBJECT_APP.object_response(mas.canonical_schema_str,
+                                                mas.ordered,
+                                                'application/json')
+    except Exception as ex:
+        _msg = '%s registered schemas incompatible: %s' % (subject_name, ex)
+        TASR_SUBJECT_APP.abort(409, _msg)
 
 
 def is_back_compatible(subject_name, schema_str):

@@ -267,7 +267,6 @@ class TestRegisteredAvroSchema(TASRTestCase):
                         'expected schema to be back-compatible with self')
 
 
-
 if __name__ == "__main__":
     LOADER = unittest.TestLoader()
     SUITE = LOADER.loadTestsFromTestCase(TestRegisteredAvroSchema)

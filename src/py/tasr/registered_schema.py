@@ -556,6 +556,8 @@ class MasterAvroSchema(RegisteredAvroSchema):
                     mfields.append(self.required_fields[fname])
                 elif fname in self.opt_fields:
                     mfields.append(self.opt_fields[fname])
+                elif fname in self.complex_fields:
+                    mfields.append(self.complex_fields[fname])
             # tack the deleted fields on the end
             for fname in self.deleted_field_names:
                 if fname in self.required_fields:

@@ -586,6 +586,35 @@ class TestTASRSubjectApp(TASRTestCase):
         meta = SchemaHeaderBot.extract_metadata(resp)
         self.assertEqual(2, meta.group_version(self.event_type), 'bad ver')
 
+    def test_master_schema_for_subject(self):
+        '''GET /tasr/subject/<subject>/master - as expected'''
+        schemas = []
+        # add a bunch of versions for our subject
+        for v in range(1, 10):
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
+            resp = self.register_schema(self.event_type, ver_schema_str)
+            self.abort_diff_status(resp, 201)
+            # schema str with canonicalized whitespace returned
+            canonicalized_schema_str = resp.body
+            schemas.append(canonicalized_schema_str)
+
+        # grab the master and check that all the expected fields are there
+        resp = self.tasr_app.get('%s/master' % self.subject_url)
+        self.abort_diff_status(resp, 200)
+        master_fnames = []
+        for mfield in json.loads(resp.body)['fields']:
+            master_fnames.append(mfield['name'])
+        # check the original fields
+        for ofield in json.loads(self.schema_str)['fields']:
+            if not ofield['name'] in master_fnames:
+                self.fail('missing original field %s' % ofield['name'])
+        # now check all of the extra fields from the version permutations
+        for v in range(1, 10):
+            fname = "fn_%s" % v
+            if not fname in master_fnames:
+                self.fail('missing field %s' % fname)
+
 
 if __name__ == "__main__":
     SUITE = unittest.TestLoader().loadTestsFromTestCase(TestTASRSubjectApp)
