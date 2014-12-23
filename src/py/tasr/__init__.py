@@ -277,7 +277,8 @@ class RedisSchemaRepository(object):
             group = self.lookup_subject(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
             group_names.append(group)
-        return sorted(group_names)
+        group_names.sort(key=lambda x: x.name.lower(), reverse=False)
+        return group_names
 
     def get_active_subjects(self):
         '''Return a set of current group objects with at least one schema.'''
@@ -287,7 +288,8 @@ class RedisSchemaRepository(object):
             group = self.lookup_subject(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
             group_names.append(group)
-        return sorted(group_names)
+        group_names.sort(key=lambda x: x.name.lower(), reverse=False)
+        return group_names
 
     def register_subject(self, group_name, config_dict=None, validators=None):
         '''Initialize a group, optionally specifying a config dict of default
