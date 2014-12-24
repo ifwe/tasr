@@ -284,8 +284,13 @@ def is_back_compatible(subject_name, schema_str):
     unreg_schema.schema_str = schema_str
     # now grab all the previous schemas up to the latest
     olds = asr.get_latest_schema_versions_for_group(subject_name, -1)
-    # check that the new schema will be back-compatible
-    return unreg_schema.back_compatible_with(olds)
+    # check that the new schema will be back-compatible -- note that by using
+    # the MAS, we are allowing exceptions to bubble up.  This is to allow more
+    # informative, field-specific errors to make it to the response.
+    if olds and len(olds) > 0:
+        mas = tasr.registered_schema.MasterAvroSchema(olds)
+        return mas.is_compatible(unreg_schema)
+    return True
 
 
 @TASR_SUBJECT_APP.put('/<subject_name>/register')
@@ -296,11 +301,19 @@ def register_subject_schema(subject_name=None):
     abort_if_body_empty()
     try:
         schema_str = bottle.request.body.getvalue()
-        if not is_back_compatible(subject_name, schema_str):
-            _msg = 'Schema not compatible with previous versions.'
+        asr = TASR_SUBJECT_APP.ASR
+        # check that schema has all required fields for back-compat
+        unreg_schema = asr.instantiate_registered_schema()
+        unreg_schema.schema_str = schema_str
+        tasr.registered_schema.MasterAvroSchema([unreg_schema, ])
+        try:
+            if not is_back_compatible(subject_name, schema_str):
+                _msg = 'Schema not compatible with previous versions.'
+                TASR_SUBJECT_APP.abort(409, _msg)
+        except ValueError as verr:
+            _msg = verr.message if verr.message else 'Incompatible schema.'
             TASR_SUBJECT_APP.abort(409, _msg)
         # the new schema is valid and compatible, so register it
-        asr = TASR_SUBJECT_APP.ASR
         reg_schema = asr.register_schema(subject_name, schema_str)
         if not reg_schema or not reg_schema.is_valid:
             TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
@@ -340,20 +353,29 @@ def lookup_by_schema_str(subject_name=None):
     abort_if_body_empty()
     try:
         schema_str = bottle.request.body.getvalue()
-        reg_schema = TASR_SUBJECT_APP.ASR.get_schema_for_schema_str(schema_str)
+        asr = TASR_SUBJECT_APP.ASR
+        reg_schema = asr.get_schema_for_schema_str(schema_str)
         if reg_schema and subject_name in reg_schema.group_names:
             return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
+
+        # check that schema has all required fields for back-compat -- if not,
+        # the raised exception will abort on a 400 right away
+        unreg_schema = asr.instantiate_registered_schema()
+        unreg_schema.schema_str = schema_str
+        tasr.registered_schema.MasterAvroSchema([unreg_schema, ])
+        # since the schema is OK, check back-compat
+        try:
+            if not is_back_compatible(subject_name, schema_str):
+                _msg = 'Schema not compatible with previous versions.'
+                TASR_SUBJECT_APP.abort(409, _msg)
+        except ValueError as verr:
+            _msg = verr.message if verr.message else 'Incompatible schema.'
+            TASR_SUBJECT_APP.abort(409, _msg)
 
         # For unregistered schemas, the status is a 404 and the return body is
         # empty, but we add the headers with the MD5 and SHA256 IDs so the
         # client has a way to get the ID values.  We also avoid calling the
         # inherited abort() as it would discard the added ID headers.
-        if not is_back_compatible(subject_name, schema_str):
-            _msg = 'Schema not compatible with previous versions.'
-            TASR_SUBJECT_APP.abort(409, _msg)
-        # the new schema is valid and compatible, so return a 404
-        unreg_schema = TASR_SUBJECT_APP.ASR.instantiate_registered_schema()
-        unreg_schema.schema_str = schema_str
         hbot = tasr.headers.SchemaHeaderBot(bottle.response)
         hbot.set_ids(unreg_schema)
         bottle.response.status = 404

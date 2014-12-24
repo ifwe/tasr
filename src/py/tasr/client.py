@@ -35,6 +35,10 @@ def reg_schema_from_url(url, method='GET', data=None, headers=None,
     '''
     schema_str = None
     resp = None
+    if headers == None:
+        headers = {'Accept': 'application/json', }
+    elif isinstance(headers, dict):
+        headers['Accept'] = 'application/json'
     try:
         if method.upper() == 'GET':
             resp = requests.get(url, timeout=timeout)
@@ -53,6 +57,8 @@ def reg_schema_from_url(url, method='GET', data=None, headers=None,
             raise TASRError('Timeout for request to %s' % url)
         if 404 == resp.status_code:
             raise TASRError(err_404)
+        if 409 == resp.status_code:
+            raise TASRError(resp.content)
         if not resp.status_code in [200, 201]:
             raise TASRError('Failed request to %s (status code: %s)' %
                             (url, resp.status_code))

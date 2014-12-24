@@ -10,6 +10,7 @@ are meant to be mounted by an umbrella instance of TASRApp.  This
 import avro.schema
 import bottle
 import tasr.app_wsgi
+from tasr.registered_schema import MasterAvroSchema
 from tasr.headers import SchemaHeaderBot
 
 
@@ -79,6 +80,16 @@ def schema_for_schema_str():
         # inherited abort() as it would discard the added ID headers.
         unreg_schema = TASR_SCHEMA_APP.ASR.instantiate_registered_schema()
         unreg_schema.schema_str = schema_str
+        # back-compatible with self is the best we can check here (and it does
+        # check for required defaults and so on to ensure back-compat later.
+        try:
+            MasterAvroSchema([unreg_schema, ]).is_compatible(unreg_schema)
+        except ValueError as verr:
+            # schema does not pass back-compat test with self -- likely missing
+            # a required field or default
+            _msg = verr.message if verr.message else 'Incompatible schema.'
+            TASR_SCHEMA_APP.abort(409, _msg)
+        # Schema looks valid and unknown
         SchemaHeaderBot(bottle.response, unreg_schema).set_ids()
         bottle.response.status = 404
         errd = TASR_SCHEMA_APP.error_dict(404, 'Schema not registered.')
