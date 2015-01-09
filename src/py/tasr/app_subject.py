@@ -69,21 +69,29 @@ def request_data_to_dict():
     we expect a valid, parseable JSON body.  Otherwise, we expect an HTML form.
     If a form is passed, multiple values per parameter are not allowed, with a
     400 status code thrown when they occur.'''
-    dct = dict()
-    if tasr.app_wsgi.is_json_type(bottle.request.content_type):
+    dct = None
+    if bottle.request.content_type == None:
+        return dct
+    rctype = bottle.request.content_type
+    rctype = rctype.lower() if isinstance(rctype, str) else rctype
+    if tasr.app_wsgi.is_json_type(rctype):
+        # if JSON is passed, try and extract the dict that way
         try:
             json_body = bottle.request.body.getvalue()
             dct = json.loads(json_body)
         except ValueError:
-            pass
-    else:
-        # by default assume a HTML form has been passed with the request
+            TASR_SUBJECT_APP.abort(400, 'Invalid JSON')
+    elif (rctype == 'application/x-www-form-urlencoded'
+          or rctype == 'multipart/form-data'):
+        dct = dict()
         for key in bottle.request.forms.keys():
             plist = bottle.request.forms.getall(key)
             if len(plist) > 1:
                 TASR_SUBJECT_APP.abort(400, 'Multiple values for %s key' % key)
             if len(plist) == 1:
                 dct[key] = plist[0]
+    else:
+        TASR_SUBJECT_APP.abort(400, 'Request data missing.')
     return dct
 
 
