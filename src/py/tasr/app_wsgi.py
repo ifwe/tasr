@@ -172,6 +172,10 @@ def json_body(ob):
 
 
 def is_json_type(mime_type):
+    if not isinstance(mime_type, basestring):
+        return False
+    # force to lower, and if we have an encoding, strip it first
+    mime_type = mime_type.lower().split(';', 1)[0]
     return mime_type in ['application/json', 'text/json']
 
 

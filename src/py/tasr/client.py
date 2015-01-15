@@ -84,8 +84,7 @@ def register_subject(subject_name, config_dict=None, host=TASR_HOST,
     Returns a GroupMetadata object on success.
     '''
     url = 'http://%s:%s/tasr/subject/%s' % (host, port, subject_name)
-    hdrs = {'content-type': 'application/json; charset=utf8', }
-    resp = requests.put(url, data=config_dict, headers=hdrs, timeout=timeout)
+    resp = requests.put(url, data=config_dict, timeout=timeout)
     if resp == None:
         raise TASRError('Timeout for register subject request.')
     if not resp.status_code in [200, 201]:

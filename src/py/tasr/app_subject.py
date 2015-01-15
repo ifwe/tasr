@@ -72,26 +72,26 @@ def request_data_to_dict():
     dct = None
     if bottle.request.content_type == None:
         return dct
+
     rctype = bottle.request.content_type
-    rctype = rctype.lower() if isinstance(rctype, str) else rctype
-    if tasr.app_wsgi.is_json_type(rctype):
+    rcbod = bottle.request.body.getvalue()
+    if rcbod and tasr.app_wsgi.is_json_type(rctype):
         # if JSON is passed, try and extract the dict that way
         try:
             json_body = bottle.request.body.getvalue()
             dct = json.loads(json_body)
         except ValueError:
             TASR_SUBJECT_APP.abort(400, 'Invalid JSON')
-    elif (rctype == 'application/x-www-form-urlencoded'
-          or rctype == 'multipart/form-data'):
-        dct = dict()
-        for key in bottle.request.forms.keys():
-            plist = bottle.request.forms.getall(key)
-            if len(plist) > 1:
-                TASR_SUBJECT_APP.abort(400, 'Multiple values for %s key' % key)
-            if len(plist) == 1:
-                dct[key] = plist[0]
-    else:
-        TASR_SUBJECT_APP.abort(400, 'Request data missing.')
+    elif rcbod and isinstance(rctype, basestring):
+        ftypes = ['application/x-www-form-urlencoded', 'multipart/form-data']
+        if rctype.lower() in ftypes:
+            dct = dict()
+            for key in bottle.request.forms.keys():
+                plist = bottle.request.forms.getall(key)
+                if len(plist) > 1:
+                    TASR_SUBJECT_APP.abort(400, 'Multiple vals for %s' % key)
+                if len(plist) == 1:
+                    dct[key] = plist[0]
     return dct
 
 

@@ -8,6 +8,7 @@ from client_test import TestTASRAppClient
 
 import unittest
 import tasr.client
+import tasr.client_legacy
 import httmock
 
 
