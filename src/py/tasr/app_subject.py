@@ -69,7 +69,7 @@ def request_data_to_dict():
     we expect a valid, parseable JSON body.  Otherwise, we expect an HTML form.
     If a form is passed, multiple values per parameter are not allowed, with a
     400 status code thrown when they occur.'''
-    dct = None
+    dct = dict()
     if bottle.request.content_type == None:
         return dct
 
@@ -85,7 +85,7 @@ def request_data_to_dict():
     elif rcbod and isinstance(rctype, basestring):
         ftypes = ['application/x-www-form-urlencoded', 'multipart/form-data']
         if rctype.lower() in ftypes:
-            dct = dict()
+            #dct = dict()
             for key in bottle.request.forms.keys():
                 plist = bottle.request.forms.getall(key)
                 if len(plist) > 1:
