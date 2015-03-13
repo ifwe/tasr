@@ -59,6 +59,16 @@ class TASRConfig(object):
         val_str = self._get_str_or_none(key)
         return int(val_str) if val_str else None
 
+    def _get_bool_or_none(self, key):
+        val_str = self._get_str_or_none(key)
+        if val_str:
+            val_str = val_str.upper()
+            if val_str in ('T', 'TRUE', 'Y', 'YES'):
+                return True
+            else:
+                return False
+        return None
+
     @property
     def host(self):
         '''Gets the TASR host for the daemon.'''
@@ -80,6 +90,21 @@ class TASRConfig(object):
         return self._get_int_or_none('redis_port')
 
     @property
+    def webhdfs_url(self):
+        '''Gets the webHDFS url for the daemon.'''
+        return self._get_str_or_none('webhdfs_url')
+
+    @property
+    def webhdfs_user(self):
+        '''Gets the webHDFS user for the daemon.'''
+        return self._get_str_or_none('webhdfs_user')
+
+    @property
+    def hdfs_master_path(self):
+        '''Gets the HDFS path for caching schema masters for the daemon.'''
+        return self._get_str_or_none('hdfs_master_path')
+
+    @property
     def log_file(self):
         '''Gets the log file for the daemon.'''
         return self._get_str_or_none('log_file')
@@ -89,6 +114,20 @@ class TASRConfig(object):
         '''Gets the log level for the daemon.'''
         return self._get_str_or_none('log_level')
 
+    @property
+    def push_masters_to_hdfs(self):
+        '''Gets whether to push masters to HDFS for the daemon.'''
+        return self._get_bool_or_none('push_masters_to_hdfs')
+
+    @property
+    def expose_force_register(self):
+        '''Gets the flag to expose force_register for the daemon.'''
+        return self._get_bool_or_none('expose_force_register')
+
+    @property
+    def expose_delete(self):
+        '''Gets the flag to expose deletes as an endpoint for the daemon.'''
+        return self._get_bool_or_none('expose_delete')
 
 # On module import, look for an available config file and instantiate the obj.
 CONFIG = TASRConfig(CONF_PATH)

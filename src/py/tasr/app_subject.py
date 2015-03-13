@@ -14,6 +14,7 @@ are included in lists of "all" subjects, but are excluded from lists of
 import avro.schema
 import bottle
 import json
+import requests
 import tasr.app_core
 import tasr.app_wsgi
 import tasr.group
@@ -157,6 +158,19 @@ def register_subject(subject_name=None):
         return TASR_SUBJECT_APP.subject_response(subject)
 
 
+@TASR_SUBJECT_APP.delete('/<subject_name>')
+def delete_subject(subject_name=None):
+    '''Deletes a subject, it's metadata, and all of its schema versions.
+    Schemas that are versions of other subjects remain.'''
+    abort_if_subject_bad(subject_name)
+    if not TASR_SUBJECT_APP.config.expose_delete:
+        TASR_SUBJECT_APP.abort(403, 'Subject deletes are not enabled.')
+    try:
+        TASR_SUBJECT_APP.ASR.delete_group(subject_name)
+    except ValueError:
+        TASR_SUBJECT_APP.abort(404, 'No %s subject.' % subject_name)
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/config')
 def subject_config(subject_name=None):
     '''
@@ -261,25 +275,42 @@ def all_subject_schemas(subject_name=None):
     return TASR_SUBJECT_APP.object_response(schema_list, jobj_list)
 
 
+def recursive_master_schema(versions):
+    '''Takes a list of versions and creates a "master", containing all the
+    fields from the most recent compatible versions. It tries on the whole
+    list, and if it fails it recurses, trying on the list minus its head.
+    '''
+    try:
+        mas = tasr.registered_schema.MasterAvroSchema(versions)
+        return (len(versions), mas)
+    except Exception:
+        if len(versions) > 1:
+            return recursive_master_schema(versions[1:])
+        return (0, None)
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/master')
 def subject_master_schema(subject_name=None):
     '''Get the MasterAvroSchema for all the versions.  This includes all of
     the fields defined in any version for the group.  This can be used to
-    build the Hive tables that cover all the versions.'''
+    build the Hive tables that cover all the versions.
+
+    Note that if the versions are incompatible, the master will be composed
+    from the most recent compatible versions.'''
     abort_if_subject_bad(subject_name)
     asr = TASR_SUBJECT_APP.ASR
     versions = asr.get_latest_schema_versions_for_group(subject_name, -1)
-    try:
-        mas = tasr.registered_schema.MasterAvroSchema(versions)
-        if not mas:
-            TASR_SUBJECT_APP.abort(404, ('No versions registered for %s.'
-                                         % subject_name))
-        return TASR_SUBJECT_APP.object_response(mas.canonical_schema_str,
-                                                mas.ordered,
-                                                'application/json')
-    except Exception as ex:
-        _msg = '%s registered schemas incompatible: %s' % (subject_name, ex)
-        TASR_SUBJECT_APP.abort(409, _msg)
+    if not versions or len(versions) == 0:
+        TASR_SUBJECT_APP.abort(404, ('No versions registered for %s.'
+                                     % subject_name))
+    (depth, mas) = recursive_master_schema(versions)
+    # we might want to add a response header to indicate master depth
+    if depth < len(versions):
+        # master based on an incomplete set of versions
+        bottle.response.status = 409
+    return TASR_SUBJECT_APP.object_response(mas.canonical_schema_str,
+                                            mas.ordered,
+                                            'application/json')
 
 
 def is_back_compatible(subject_name, schema_str):
@@ -301,37 +332,86 @@ def is_back_compatible(subject_name, schema_str):
     return True
 
 
-@TASR_SUBJECT_APP.put('/<subject_name>/register')
+def update_hdfs_master(subject_name):
+    if not TASR_SUBJECT_APP.config.push_masters_to_hdfs:
+        return None
+    app = TASR_SUBJECT_APP
+    versions = app.ASR.get_latest_schema_versions_for_group(subject_name, -1)
+    mas = recursive_master_schema(versions)[1]
+    base_url = '%s%s/%s' % (app.config.webhdfs_url,
+                            app.config.hdfs_master_path,
+                            subject_name)
+    url = '%s?user.name=%s' % (base_url, app.config.webhdfs_user)
+    # first get the current master from HDFS
+    resp = requests.get('%s&op=OPEN' % url)
+    old_master_str = resp.content if resp else None
+    # if there is an old master that matches, reference it and we're done
+    if old_master_str and old_master_str == mas.canonical_schema_str:
+        bottle.response.add_header('X-TASR-HDFS-MASTER-PATH', base_url)
+        return False
+    # there is either no existing master or it's out of date, so write to HDFS
+    resp = requests.put('%s&op=CREATE&overwrite=true' % url,
+                        mas.canonical_schema_str)
+    resp_date = resp.headers['date']
+    if resp.status_code >= 200 and resp.status_code < 300:
+        bottle.response.add_header('X-TASR-HDFS-MASTER-PATH', base_url)
+        bottle.response.add_header('X-TASR-HDFS-MASTER-UPDATED', resp_date)
+        return True
+    return None
+
+
 def register_subject_schema(subject_name=None):
-    '''A method to register_schema a schema for a specified group_name.'''
+    '''A method to register a schema for a specified group_name. This method
+    skips the back-compatibility checks, so use it with care. Note that a
+    "master" for an incompatible sequence of schemas will only include fields
+    from the most recently compatible sequence.
+    '''
     abort_if_subject_bad(subject_name)
     abort_if_content_type_not_json()
     abort_if_body_empty()
     try:
         schema_str = bottle.request.body.getvalue()
         asr = TASR_SUBJECT_APP.ASR
-        # check that schema has all required fields for back-compat
-        unreg_schema = asr.instantiate_registered_schema()
-        unreg_schema.schema_str = schema_str
-        tasr.registered_schema.MasterAvroSchema([unreg_schema, ])
-        try:
-            if not is_back_compatible(subject_name, schema_str):
-                _msg = 'Schema not compatible with previous versions.'
-                TASR_SUBJECT_APP.abort(409, _msg)
-        except ValueError as verr:
-            _msg = verr.message if verr.message else 'Incompatible schema.'
-            TASR_SUBJECT_APP.abort(409, _msg)
-        # the new schema is valid and compatible, so register it
         reg_schema = asr.register_schema(subject_name, schema_str)
         if not reg_schema or not reg_schema.is_valid:
             TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
         if reg_schema.created:
             bottle.response.status = 201
+            update_hdfs_master(subject_name)
         return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
     except avro.schema.SchemaParseException:
         TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
     except ValueError:
         TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
+
+
+@TASR_SUBJECT_APP.put('/<subject_name>/register')
+def register_compatible_subject_schema(subject_name=None):
+    '''A method to register a back-compatible schema for a specified group.
+    This will reject the request on a 409 if the fields are not a valid
+    extension of the previous schemas.  If you must override this, use the
+    force_register endpoint (register_subject_schema method) instead.
+    '''
+    abort_if_subject_bad(subject_name)
+    abort_if_content_type_not_json()
+    abort_if_body_empty()
+    schema_str = bottle.request.body.getvalue()
+    try:
+        if not is_back_compatible(subject_name, schema_str):
+            _msg = 'Schema not compatible with previous versions.'
+            TASR_SUBJECT_APP.abort(409, _msg)
+    except ValueError as verr:
+        _msg = verr.message if verr.message else 'Incompatible schema.'
+        TASR_SUBJECT_APP.abort(409, _msg)
+    # the new schema is valid and compatible, so register it
+    return register_subject_schema(subject_name)
+
+
+@TASR_SUBJECT_APP.put('/<subject_name>/force_register')
+def force_register_subject_schema(subject_name=None):
+    if not TASR_SUBJECT_APP.config.expose_force_register:
+        TASR_SUBJECT_APP.abort(403, 'Forced schema registration not enabled.')
+    return register_subject_schema(subject_name)
 
 
 @TASR_SUBJECT_APP.put('/<subject_name>/register_if_latest/<version>')

@@ -12,7 +12,7 @@ from webtest import TestApp
 import tasr.app
 import json
 import StringIO
-
+import requests
 
 APP = tasr.app.TASR_APP
 APP.set_config_mode('local')
@@ -132,6 +132,49 @@ class TestTASRSubjectApp(TASRTestCase):
         metas = SubjectHeaderBot.extract_metadata(resp)
         self.assertEqual(self.event_type, metas[self.event_type].name,
                          'unexpected subject name')
+
+    def test_delete_subject(self):
+        '''DELETE /tasr/subject/<subject> - delete the subject'''
+        # ensure expose_delete is True
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_delete')
+        APP.config.config.set(mode, 'expose_delete', 'True')
+        try:
+            self.register_subject(self.event_type)
+            resp = self.tasr_app.request(self.subject_url, method='GET')
+            self.abort_diff_status(resp, 200)
+            resp = self.tasr_app.request(self.subject_url, method='DELETE',
+                                         expect_errors=False)
+            self.abort_diff_status(resp, 200)
+        finally:
+            # reset expose_delete to its original value
+            APP.config.config.set(mode, 'expose_delete', orig_val)
+
+    def test_delete_missing_subject(self):
+        '''DELETE /tasr/subject/<subject> - delete a missing subject'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_delete')
+        APP.config.config.set(mode, 'expose_delete', 'True')
+        try:
+            resp = self.tasr_app.request(self.subject_url, method='DELETE',
+                                         expect_errors=True)
+            self.abort_diff_status(resp, 404)
+        finally:
+            # reset expose_delete to its original value
+            APP.config.config.set(mode, 'expose_delete', orig_val)
+
+    def test_unexposed_delete_subject(self):
+        '''DELETE /tasr/subject/<subject> - delete when not allowed'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_delete')
+        APP.config.config.set(mode, 'expose_delete', 'False')
+        try:
+            resp = self.tasr_app.request(self.subject_url, method='DELETE',
+                                         expect_errors=True)
+            self.abort_diff_status(resp, 403)
+        finally:
+            # reset expose_delete to its original value
+            APP.config.config.set(mode, 'expose_delete', orig_val)
 
     def test_register_subject__accept_json(self):
         '''PUT /tasr/subject - registers the subject (not the schema)'''
@@ -329,6 +372,76 @@ class TestTASRSubjectApp(TASRTestCase):
         self.abort_diff_status(resp1, 200)
         meta1 = SchemaHeaderBot.extract_metadata(resp1)
         self.assertEqual(1, meta1.group_version(self.event_type), 'bad ver')
+
+    def test_fail_rereg_with_incompatible_schema(self):
+        '''PUT /tasr/subject/<subject>/register - incompatible schemas'''
+        resp = self.register_schema(self.event_type, self.schema_str)
+        self.abort_diff_status(resp, 201)
+        meta = SchemaHeaderBot.extract_metadata(resp)
+        self.assertEqual(1, meta.group_version(self.event_type), 'bad ver')
+        # swap long for int, an incompatible change
+        targ = '{"name": "source__timestamp", "type": "long"}'
+        replacement = '{"name": "source__timestamp", "type": "int"}'
+        incompat_schema_str = self.schema_str.replace(targ, replacement, 1)
+        # now registering the schema should return a 409
+        reg_url = '%s/register' % self.subject_url
+        resp1 = self.tasr_app.request(reg_url, method='PUT',
+                                      content_type=self.content_type,
+                                      expect_errors=True,
+                                      body=incompat_schema_str)
+        self.abort_diff_status(resp1, 409)
+
+    def test_force_rereg_with_incompatible_schema(self):
+        '''PUT /tasr/subject/<subject>/force_register - incompatible schemas'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_force_register')
+        APP.config.config.set(mode, 'expose_force_register', 'True')
+        try:
+            resp = self.register_schema(self.event_type, self.schema_str)
+            self.abort_diff_status(resp, 201)
+            meta = SchemaHeaderBot.extract_metadata(resp)
+            self.assertEqual(1, meta.group_version(self.event_type), 'bad ver')
+            # swap long for int, an incompatible change
+            targ = '{"name": "source__timestamp", "type": "long"}'
+            replacement = '{"name": "source__timestamp", "type": "int"}'
+            incompat_schema_str = self.schema_str.replace(targ, replacement, 1)
+            # now forcibly registering the schema should return a 201
+            reg_url = '%s/force_register' % self.subject_url
+            resp1 = self.tasr_app.request(reg_url, method='PUT',
+                                          content_type=self.content_type,
+                                          expect_errors=False,
+                                          body=incompat_schema_str)
+            self.abort_diff_status(resp1, 201)
+            meta = SchemaHeaderBot.extract_metadata(resp1)
+            self.assertEqual(2, meta.group_version(self.event_type), 'bad ver')
+        finally:
+            # reset expose_force_register to its original value
+            APP.config.config.set(mode, 'expose_force_register', orig_val)
+
+    def test_unexposed_force_rereg_with_incompatible_schema(self):
+        '''PUT /tasr/subject/<subject>/force_register - incompatible schemas'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_force_register')
+        APP.config.config.set(mode, 'expose_force_register', 'False')
+        try:
+            resp = self.register_schema(self.event_type, self.schema_str)
+            self.abort_diff_status(resp, 201)
+            meta = SchemaHeaderBot.extract_metadata(resp)
+            self.assertEqual(1, meta.group_version(self.event_type), 'bad ver')
+            # swap long for int, an incompatible change
+            targ = '{"name": "source__timestamp", "type": "long"}'
+            replacement = '{"name": "source__timestamp", "type": "int"}'
+            incompat_schema_str = self.schema_str.replace(targ, replacement, 1)
+            # now forcibly registering the schema should return a 201
+            reg_url = '%s/force_register' % self.subject_url
+            resp1 = self.tasr_app.request(reg_url, method='PUT',
+                                          content_type=self.content_type,
+                                          expect_errors=True,
+                                          body=incompat_schema_str)
+            self.abort_diff_status(resp1, 403)
+        finally:
+            # reset expose_force_register to its original value
+            APP.config.config.set(mode, 'expose_force_register', orig_val)
 
     def test_multi_subject_reg(self):
         '''PUT /tasr/subject/<subject>/register - multi subjects, one schema'''
@@ -590,7 +703,7 @@ class TestTASRSubjectApp(TASRTestCase):
         '''GET /tasr/subject/<subject>/master - as expected'''
         schemas = []
         # add a bunch of versions for our subject
-        for v in range(1, 10):
+        for v in range(1, 4):
             ver_schema_str = self.get_schema_permutation(self.schema_str,
                                                          "fn_%s" % v)
             resp = self.register_schema(self.event_type, ver_schema_str)
@@ -610,10 +723,100 @@ class TestTASRSubjectApp(TASRTestCase):
             if not ofield['name'] in master_fnames:
                 self.fail('missing original field %s' % ofield['name'])
         # now check all of the extra fields from the version permutations
-        for v in range(1, 10):
+        for v in range(1, 4):
             fname = "fn_%s" % v
             if not fname in master_fnames:
                 self.fail('missing field %s' % fname)
+
+    def test_incompat_master_schema_for_subject(self):
+        '''GET /tasr/subject/<subject>/master - as expected'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_force_register')
+        APP.config.config.set(mode, 'expose_force_register', 'True')
+        try:
+            # first add a version that will not be compatible
+            targ = '{"name": "source__timestamp", "type": "long"}'
+            replacement = '{"name": "source__timestamp", "type": "int"}'
+            incompat_schema_str = self.schema_str.replace(targ, replacement, 1)
+            resp = self.register_schema(self.event_type, incompat_schema_str)
+            self.abort_diff_status(resp, 201)
+            # now force register a set of compatible schemas
+            schemas = []
+            for v in range(1, 4):
+                ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                             "fn_%s" % v)
+                reg_url = '%s/force_register' % self.subject_url
+                resp1 = self.tasr_app.request(reg_url, method='PUT',
+                                              content_type=self.content_type,
+                                              expect_errors=False,
+                                              body=ver_schema_str)
+                self.abort_diff_status(resp1, 201)
+                # schema str with canonicalized whitespace returned
+                canonicalized_schema_str = resp1.body
+                schemas.append(canonicalized_schema_str)
+            # grab the master and check that all the expected fields are there
+            reg_url = '%s/master' % self.subject_url
+            resp2 = self.tasr_app.request(reg_url, method='GET',
+                                          content_type=self.content_type,
+                                          expect_errors=True,
+                                          body=None)
+            self.abort_diff_status(resp2, 409)
+            master_fnames = []
+            for mfield in json.loads(resp2.body)['fields']:
+                master_fnames.append(mfield['name'])
+            # check the original fields
+            for ofield in json.loads(self.schema_str)['fields']:
+                if not ofield['name'] in master_fnames:
+                    self.fail('missing original field %s' % ofield['name'])
+            # now check all of the extra fields from the version permutations
+            for v in range(1, 4):
+                fname = "fn_%s" % v
+                if not fname in master_fnames:
+                    self.fail('missing field %s' % fname)
+        finally:
+            # reset expose_force_register to its original value
+            APP.config.config.set(mode, 'expose_force_register', orig_val)
+
+    def test_hdfs_master_schema_for_subject(self):
+        '''GET /tasr/subject/<subject>/master - as expected, check hdfs'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'push_masters_to_hdfs')
+        APP.config.config.set(mode, 'push_masters_to_hdfs', 'True')
+        try:
+            resp = None
+            schemas = []
+            # add a bunch of versions for our subject
+            for v in range(1, 4):
+                ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                             "fn_%s" % v)
+                resp = self.register_schema(self.event_type, ver_schema_str)
+                self.abort_diff_status(resp, 201)
+                # schema str with canonicalized whitespace returned
+                canonicalized_schema_str = resp.body
+                schemas.append(canonicalized_schema_str)
+
+            # grab the master FROM HDFS, check that all the expected fields
+            hdfs_path = resp.headers['X-Tasr-Hdfs-Master-Path']
+            hdfs_user = APP.config.config.get(mode, 'webhdfs_user')
+            # first get the current master from HDFS
+            resp = requests.get('%s?user.name=%s&op=OPEN' % (hdfs_path,
+                                                             hdfs_user))
+            self.abort_diff_status(resp, 200)
+            master_fnames = []
+            for mfield in json.loads(resp.content)['fields']:
+                master_fnames.append(mfield['name'])
+            # check the original fields
+            for ofield in json.loads(self.schema_str)['fields']:
+                if not ofield['name'] in master_fnames:
+                    self.fail('missing original field %s' % ofield['name'])
+            # now check all of the extra fields from the version permutations
+            for v in range(1, 4):
+                fname = "fn_%s" % v
+                if not fname in master_fnames:
+                    self.fail('missing field %s' % fname)
+        finally:
+            # reset expose_force_register to its original value
+            APP.config.config.set(mode, 'push_masters_to_hdfs', orig_val)
 
 
 if __name__ == "__main__":
