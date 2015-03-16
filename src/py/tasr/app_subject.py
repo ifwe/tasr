@@ -14,6 +14,7 @@ are included in lists of "all" subjects, but are excluded from lists of
 import avro.schema
 import bottle
 import json
+import re
 import requests
 import tasr.app_core
 import tasr.app_wsgi
@@ -338,9 +339,10 @@ def update_hdfs_master(subject_name):
     app = TASR_SUBJECT_APP
     versions = app.ASR.get_latest_schema_versions_for_group(subject_name, -1)
     mas = recursive_master_schema(versions)[1]
+    normalized_subject_name = re.sub(r"^s_", "", subject_name)
     base_url = '%s%s/%s' % (app.config.webhdfs_url,
                             app.config.hdfs_master_path,
-                            subject_name)
+                            normalized_subject_name)
     url = '%s?user.name=%s' % (base_url, app.config.webhdfs_user)
     # first get the current master from HDFS
     resp = requests.get('%s&op=OPEN' % url)
@@ -350,7 +352,7 @@ def update_hdfs_master(subject_name):
         bottle.response.add_header('X-TASR-HDFS-MASTER-PATH', base_url)
         return False
     # there is either no existing master or it's out of date, so write to HDFS
-    resp = requests.put('%s&op=CREATE&overwrite=true' % url,
+    resp = requests.put('%s&op=CREATE&overwrite=true&permission=644' % url,
                         mas.canonical_schema_str)
     resp_date = resp.headers['date']
     if resp.status_code >= 200 and resp.status_code < 300:
