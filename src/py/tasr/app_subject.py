@@ -353,7 +353,8 @@ def update_hdfs_master(subject_name):
         return False
     # there is either no existing master or it's out of date, so write to HDFS
     resp = requests.put('%s&op=CREATE&overwrite=true&permission=644' % url,
-                        mas.canonical_schema_str)
+                        data=mas.canonical_schema_str,
+                        headers={'Content-Type': 'application/octet-stream'})
     resp_date = resp.headers['date']
     if resp.status_code >= 200 and resp.status_code < 300:
         bottle.response.add_header('X-TASR-HDFS-MASTER-PATH', base_url)
