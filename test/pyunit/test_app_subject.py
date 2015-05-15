@@ -245,7 +245,7 @@ class TestTASRSubjectApp(TASRTestCase):
         self.assertEqual(self.event_type, metas[self.event_type].name,
                          'unexpected subject name')
 
-    def test_subject_config(self):
+    def test_get_subject_config(self):
         '''GET /tasr/subject/<subject>/config - get the config map'''
         resp = self.tasr_app.put(self.subject_url,
                                  {'subject_name': self.event_type},
@@ -272,6 +272,100 @@ class TestTASRSubjectApp(TASRTestCase):
         self.abort_diff_status(resp, 200)
         self.assertEqual('subject_name=alice', resp.body.strip(),
                          'Bad response body.')
+
+    def test_get_subject_config_entry(self):
+        '''GET /tasr/subject/<subject>/config/<key> - get a config value'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': self.event_type},
+                                 expect_errors=False)
+        self.abort_diff_status(resp, 201)
+        url = '%s/config/%s' % (self.subject_url, 'subject_name')
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        self.assertEqual(resp.body.strip(), self.event_type, 'value mismatch')
+
+    def test_set_subject_config_entry_overwrite(self):
+        '''POST /tasr/subject/<subject>/config/<key> - get a config value'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': self.event_type},
+                                 expect_errors=False)
+        self.abort_diff_status(resp, 201)
+        # check that the original value is right
+        url = '%s/config/%s' % (self.subject_url, 'subject_name')
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        self.assertEqual(resp.body.strip(), self.event_type, 'value mismatch')
+
+        # set a new entry -- key is part of the URL, the POST body is the value
+        val = 'ALICE_VAL'
+        resp = self.tasr_app.post(url, val)
+        self.abort_diff_status(resp, 200)
+        # now grab the value for the new entry and check it is what we sent
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        rval = resp.body.strip()
+        self.assertEqual(rval, val, 'value mismatch (%s != %s)' % (rval, val))
+
+    def test_set_subject_config_entry_new(self):
+        '''POST /tasr/subject/<subject>/config/<key> - get a config value'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': self.event_type},
+                                 expect_errors=False)
+        self.abort_diff_status(resp, 201)
+        # check that the original value is right
+        url = '%s/config/%s' % (self.subject_url, 'subject_name')
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        self.assertEqual(resp.body.strip(), self.event_type, 'value mismatch')
+
+        # set a new entry -- key is part of the URL, the POST body is the value
+        key = 'alice_key'
+        val = 'ALICE_VAL'
+        url = '%s/config/%s' % (self.subject_url, key)
+        resp = self.tasr_app.post(url, val)
+        self.abort_diff_status(resp, 200)
+        # now grab the value for the new entry and check it is what we sent
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        rval = resp.body.strip()
+        self.assertEqual(rval, val, 'value mismatch (%s != %s)' % (rval, val))
+
+    def test_delete_subject_config_entry(self):
+        '''POST /tasr/subject/<subject>/config/<key> - get a config value'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': self.event_type},
+                                 expect_errors=False)
+        self.abort_diff_status(resp, 201)
+        # add a new entry
+        # set a new entry -- key is part of the URL, the POST body is the value
+        key = 'alice_key'
+        val = 'ALICE_VAL'
+        url = '%s/config/%s' % (self.subject_url, key)
+        resp = self.tasr_app.post(url, val)
+        self.abort_diff_status(resp, 200)
+
+        # check that both entries are present and correct
+        url = '%s/config/%s' % (self.subject_url, 'subject_name')
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        self.assertEqual(resp.body.strip(), self.event_type, 'value mismatch')
+        url = '%s/config/%s' % (self.subject_url, key)
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        self.assertEqual(resp.body.strip(), val, 'value mismatch')
+
+        # delete the new entry
+        resp = self.tasr_app.delete(url)
+        self.abort_diff_status(resp, 200)
+
+        # now check that the new entry is gone...
+        resp = self.tasr_app.request(url, method='GET', expect_errors=True)
+        self.abort_diff_status(resp, 404)
+        # ...and that the original entry is unaffected
+        url = '%s/config/%s' % (self.subject_url, 'subject_name')
+        resp = self.tasr_app.request(url, method='GET')
+        self.abort_diff_status(resp, 200)
+        self.assertEqual(resp.body.strip(), self.event_type, 'value mismatch')
 
     def test_subject_integral(self):
         '''GET /tasr/subject/<subject_name>/integral - should always return

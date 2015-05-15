@@ -36,7 +36,7 @@ def all_topics():
     schema registered.  It returns a text/plain body, one topic name per line.
     '''
     hbot = tasr.headers.SubjectHeaderBot(bottle.response)
-    topics = TASR_TOPIC_APP.ASR.get_all_subjects()
+    topics = TASR_TOPIC_APP.ASR.get_all_groups()
     tname_list = []
     for topic in topics:
         hbot.add_subject_name_current_version(topic)

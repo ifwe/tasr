@@ -60,7 +60,7 @@ def abort_if_body_empty():
 def get_subject(subject_name):
     '''Getting the subject object is common enough to be a method'''
     abort_if_subject_bad(subject_name)
-    subject = TASR_SUBJECT_APP.ASR.lookup_subject(subject_name)
+    subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
     if not subject:
         TASR_SUBJECT_APP.abort(404, 'No subject %s.' % subject_name)
     return subject
@@ -125,33 +125,42 @@ def lookup_subject(subject_name=None):
 @TASR_SUBJECT_APP.put('/<subject_name>')
 def register_subject(subject_name=None):
     '''
-    Register a subject (i.e. -- initialize a group).  This is implicit using
-    the TASR API when a schema is registered, but is a separate method in the
-    S+V API.
-
-    S+V accepts a form as the PUT body.  That form, if present, is stored as
-    the group config (that is, group metadata).  A 200 status indicates that
-    the subject was already registered.  A 201 (created) status indicates that
-    it has been added.  Both cases will have TASR headers holding the subject
-    metadata in the response.  If a config map is defined and it matches the
-    one stored for an existing subject, a 200 is returned.  However, if a
-    config map conflicts with a pre-existing one for the subject, a 409
-    (conflict) status will be returned.
+    Register a subject (i.e. -- initialize a group).  S+V accepts a form as the
+    PUT body.  That form, if present, is stored as the group config (that is,
+    group metadata).  A 200 status indicates that the subject was already
+    registered.  A 201 (created) status indicates that it has been added.  Both
+    cases will have TASR headers holding the subject metadata in the response.
+    If a config map is defined and it matches the one stored for an existing
+    subject, a 200 is returned.  However, if a config map conflicts with a pre-
+    existing one for the subject, a 409 (conflict) status will be returned.
     '''
-    config_dict = request_data_to_dict()
-
     abort_if_subject_bad(subject_name)
-    subject = TASR_SUBJECT_APP.ASR.lookup_subject(subject_name)
+    config_dict = request_data_to_dict()
+    subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
     if subject:
         # subject already there, so check for conflicts
-        if subject.config == config_dict:
-            return TASR_SUBJECT_APP.subject_response(subject)
+        diff_set = set(subject.config.keys()) ^ set(config_dict.keys())
+        if len(diff_set) > 0:
+            _msg = 'Conflict.  Mismatched keys: %s' % diff_set
+            TASR_SUBJECT_APP.abort(409, _msg)
         else:
-            TASR_SUBJECT_APP.abort(409, 'Conflicts with existing config.')
+            # keys are the same, so check values
+            for k, v in subject.config.iteritems():
+                if not v == config_dict[k]:
+                    _msg = ('Conflict.  Value mismatch for key %s (%s != %s)' %
+                            (k, v, config_dict[k]))
+                    TASR_SUBJECT_APP.abort(409, _msg)
+        # no change, so do nothing and return a 200
+        return TASR_SUBJECT_APP.subject_response(subject)
     else:
-        # subject is new, so register it
-        TASR_SUBJECT_APP.ASR.register_subject(subject_name, config_dict)
-        subject = TASR_SUBJECT_APP.ASR.lookup_subject(subject_name)
+        # subject is new, so register it -- config keys need "config." prefix
+        # to be included in the metadata_dict for the constructor
+        metadata_dict = dict()
+        for key, val in config_dict.iteritems():
+            ckey = 'config.%s' % key
+            metadata_dict[ckey] = val
+        TASR_SUBJECT_APP.ASR.register_group(subject_name, metadata_dict)
+        subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
         if not subject:
             TASR_SUBJECT_APP.abort(500, ('Failed to create subject %s.'
                                          % subject_name))
@@ -186,22 +195,21 @@ def subject_config(subject_name=None):
 
 @TASR_SUBJECT_APP.post('/<subject_name>/config')
 def update_subject_config(subject_name=None):
-    '''Replace the config dict for a subject.'''
-    config_dict = request_data_to_dict()
-    subject = get_subject(subject_name)
-    if subject.config != config_dict:
-        TASR_SUBJECT_APP.ASR.update_subject_config(subject_name, config_dict)
-        # get updated subject object
-        subject = TASR_SUBJECT_APP.ASR.lookup_subject(subject_name)
-    return TASR_SUBJECT_APP.subject_config_response(subject)
-
-
-@TASR_SUBJECT_APP.post('/<subject_name>/config/<key>')
-def update_subject_config_entry(subject_name=None, key=None):
-    '''Set or replace the value for the KEY in config dict for a subject.'''
-    subject = get_subject(subject_name)
-    subject.config[key] = bottle.request.body.getvalue()
-    TASR_SUBJECT_APP.ASR.update_subject_config(subject_name, subject.config)
+    '''
+    Replace the _whole_ config dict for a subject.  The config entries are a
+    subset of the subject metadata with a "config." prefix.
+    '''
+    abort_if_subject_bad(subject_name)
+    # figure out the dict to set
+    config_dict = dict()
+    for key, val in request_data_to_dict().iteritems():
+        ckey = 'config.%s' % key
+        config_dict[ckey] = val
+    asr = TASR_SUBJECT_APP.ASR
+    # clear out all old config entries first to avoid unexpected leftovers
+    asr.delete_prefixed_group_metadata_entries(subject_name, 'config.')
+    asr.set_group_metadata(subject_name, config_dict)
+    subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
     return TASR_SUBJECT_APP.subject_config_response(subject)
 
 
@@ -210,9 +218,30 @@ def get_subject_config_entry(subject_name=None, key=None):
     '''Get the value for the KEY in config dict for a subject.'''
     subject = get_subject(subject_name)
     if not key in subject.config:
-        TASR_SUBJECT_APP.abort(404, ('No %s in config for %s.'
-                                     % (key, subject_name)))
+        TASR_SUBJECT_APP.abort(404, ('No %s in config for %s.' %
+                                     (key, subject_name)))
     return subject.config[key]
+
+
+@TASR_SUBJECT_APP.post('/<subject_name>/config/<key>')
+def update_subject_config_entry(subject_name=None, key=None):
+    '''Set or replace the value for the KEY in config dict for a subject.'''
+    abort_if_subject_bad(subject_name)
+    val = bottle.request.body.getvalue()
+    ckey = 'config.%s' % key
+    TASR_SUBJECT_APP.ASR.set_group_metadata_entry(subject_name, ckey, val)
+    subject = get_subject(subject_name)
+    return TASR_SUBJECT_APP.subject_config_response(subject)
+
+
+@TASR_SUBJECT_APP.delete('/<subject_name>/config/<key>')
+def delete_subject_config_entry(subject_name=None, key=None):
+    '''Remove the KEY in config dict for a subject.'''
+    abort_if_subject_bad(subject_name)
+    ckey = 'config.%s' % key
+    TASR_SUBJECT_APP.ASR.delete_group_metadata_entry(subject_name, ckey)
+    subject = get_subject(subject_name)
+    return TASR_SUBJECT_APP.subject_config_response(subject)
 
 
 @TASR_SUBJECT_APP.get('/<subject_name>/integral')

@@ -48,9 +48,9 @@ using either the MD5 (16 bytes) or SHA256 (32 bytes) hashes.
 
 With all this in mind, we need the following general repository methods:
 
-  - get_all_subjects()
-  - register_subject()
-  - lookup_subject()
+  - get_all_groups()
+  - register_group()
+  - lookup_group()
   - register_schema()
   - get_schema_for_group_and_version()
   - schema_for_id_str()
@@ -269,85 +269,90 @@ class RedisSchemaRepository(object):
     # exposed, API methods
     ##########################################################################
 
-    def get_all_subjects(self):
+    def get_all_groups(self):
         '''Return a set of current group objects.'''
         group_names = []
         for group_key in self.redis.keys('g.*'):
             group_name = group_key[2:]
-            group = self.lookup_subject(group_name)
+            group = self.lookup_group(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
             group_names.append(group)
         group_names.sort(key=lambda x: x.name.lower(), reverse=False)
         return group_names
 
-    def get_active_subjects(self):
+    def get_active_groups(self):
         '''Return a set of current group objects with at least one schema.'''
         group_names = []
         for group_key in self.get_cur_versions():
             group_name = group_key[4:]
-            group = self.lookup_subject(group_name)
+            group = self.lookup_group(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
             group_names.append(group)
         group_names.sort(key=lambda x: x.name.lower(), reverse=False)
         return group_names
 
-    def register_subject(self, group_name, config_dict=None, validators=None):
-        '''Initialize a group, optionally specifying a config dict of default
-        values and a set of validator class name strings.'''
+    def get_group_key(self, group_name):
+        '''A util method to get the redis key used for the group hash.'''
         if not Group.validate_group_name(group_name):
             raise InvalidGroupException('Bad group name: %s' % group_name)
-        group_key = 'g.%s' % group_name
-        timestamp = long(time.time())
-        rvals = self.lua_init_group(keys=[group_key, timestamp, ])
-        if rvals:
-            # this will update the hash fields and validators if provided
-            if config_dict:
-                self.update_subject_config(group_name, config_dict)
-            if validators:
-                validators_key = 'validators.%s' % group_name
-                self.redis.sadd(validators_key, validators)
+        return 'g.%s' % group_name
 
-    def update_subject_config(self, group_name, config_dict):
-        '''
-        Update the subject config dict.  This blows away all "config.*" fields
-        then adds new ones (and sets their values) based on the passed dict.
-        '''
-        if not Group.validate_group_name(group_name):
-            raise InvalidGroupException('Bad group name: %s' % group_name)
-        group_key = 'g.%s' % group_name
-        for field in self.redis.hkeys(group_key):
-            if field.startswith('config.'):
-                self.redis.hdel(group_key, field)
-        norm_conf_dict = dict()
-        for key, value in config_dict.iteritems():
-            if key.startswith('config.'):
-                norm_conf_dict[key] = value
-            else:
-                norm_conf_dict['config.%s' % key] = value
-        self.redis.hmset(group_key, norm_conf_dict)
-
-    def lookup_subject(self, group_name):
+    def lookup_group(self, group_name):
         '''Retrieve a Group object with the specified name or None.  The field
         names starting with "group_" should set group level attributes.  The
         field names starting with "default_" should set field defaults for the
         group schemas.'''
-        if not Group.validate_group_name(group_name):
-            raise InvalidGroupException('Bad group name: %s' % group_name)
-        group_key = 'g.%s' % group_name
+        group_key = self.get_group_key(group_name)
         group_dict = self.redis.hgetall(group_key)
         if group_dict:
-            timestamp = group_dict.pop('group_ts')
-            config_dict = dict()
-            for key, val in group_dict.iteritems():
-                if key.startswith('config.'):
-                    config_dict[key[7:]] = val
-            if len(config_dict) > 0:
-                group = Group(group_name, config_dict)
-            else:
-                group = Group(group_name)
-            group.timestamp = timestamp
+            group = Group(group_name, group_dict)
             group.current_schema = self.get_latest_schema_for_group(group_name)
             return group
+
+    def register_group(self, group_name, metadata_dict=None, validators=None):
+        '''Initialize a group, optionally specifying a dict of group metadata
+        values and a set of validator class name strings.'''
+        group_key = self.get_group_key(group_name)
+        timestamp = long(time.time())
+        rvals = self.lua_init_group(keys=[group_key, timestamp, ])
+        if rvals:
+            # this will update the hash fields and validators if provided
+            if metadata_dict:
+                self.set_group_metadata(group_name, metadata_dict)
+            if validators:
+                validators_key = 'validators.%s' % group_name
+                self.redis.sadd(validators_key, validators)
+
+    def get_group_metadata(self, group_name):
+        '''Get the full group metadata dict from the redis hash.'''
+        group_key = self.get_group_key(group_name)
+        return self.redis.hgetall(group_key)
+
+    def set_group_metadata(self, group_name, entry_dict):
+        '''Set all the entries in the passed dict in the redis hash.  This will
+        NOT clear unmentioned keys.'''
+        group_key = self.get_group_key(group_name)
+        self.redis.hmset(group_key, entry_dict)
+
+    def set_group_metadata_entry(self, group_name, key_name, val):
+        '''Sets a specific group metadata entry in the redis hash.'''
+        group_key = self.get_group_key(group_name)
+        self.redis.hset(group_key, key_name, val)
+
+    def delete_group_metadata_entry(self, group_name, key_name):
+        '''Deletes a specific group metadata entry in the redis hash.'''
+        group_key = self.get_group_key(group_name)
+        field_key = key_name
+        self.redis.hdel(group_key, field_key)
+
+    def delete_prefixed_group_metadata_entries(self, group_name, prefix):
+        '''Deletes all group metadata entries in the redis hash having keys
+        matching the specified prefix.  This is mainly used to clear all
+        "config." prefixed entries.'''
+        group_key = self.get_group_key(group_name)
+        for field in self.redis.hkeys(group_key):
+            if field.startswith(prefix):
+                self.redis.hdel(group_key, field)
 
     def register_schema(self, group_name, schema_str):
         '''Register a schema string as a version for a group_name.'''
@@ -359,7 +364,7 @@ class RedisSchemaRepository(object):
             raise ValueError(u'Cannot register_schema invalid schema.')
 
         # make sure the group_name is registered first
-        self.register_subject(group_name)
+        self.register_group(group_name)
 
         # the key values are what we use as Redis keys
         sha256_key = u'id.%s' % new_rs.sha256_id

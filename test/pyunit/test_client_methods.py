@@ -61,7 +61,7 @@ class TestTASRClientMethods(TestTASRAppClient):
     # subject tests for S+V API
     ########################################################################
     def test_bare_register_subject(self):
-        '''register_subject() - as expected'''
+        '''register_group() - as expected'''
         self.bare_register_subject_skeleton()
 
     def test_bare_lookup_subject(self):

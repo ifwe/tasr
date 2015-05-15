@@ -126,7 +126,7 @@ def all_subject_names():
     If text/json or application/json is specified, the return body will be a
     JSON document containing current metadata for each subject.
     '''
-    subjects = TASR_COLLECTION_APP.ASR.get_all_subjects()
+    subjects = TASR_COLLECTION_APP.ASR.get_all_groups()
     return subject_list_response(subjects)
 
 
@@ -136,5 +136,5 @@ def active_subject_names():
     line (using '\n' as delimiters).  We add X-TASR headers with the subject
     names as well.
     '''
-    subjects = TASR_COLLECTION_APP.ASR.get_active_subjects()
+    subjects = TASR_COLLECTION_APP.ASR.get_active_groups()
     return subject_list_response(subjects)

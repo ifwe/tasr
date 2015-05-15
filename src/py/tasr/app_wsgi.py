@@ -3,7 +3,7 @@ Created on Apr 14, 2014
 
 @author: cmills
 
-The top-level TASRApp is an unbrella object, extending the Bottle class, but
+The top-level TASRApp is an umbrella object, extending the Bottle class, but
 also serving as a common root on which to mount the path-specific sub-apps.
 As such, it is the WSGI compliant class to instantiate for a TASR instance.  We
 avoid instantiating it in this module as several other modules import from this

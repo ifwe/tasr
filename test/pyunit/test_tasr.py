@@ -51,14 +51,14 @@ class TestTASR(TASRTestCase):
             self.asr.redis.flushdb()
 
     # registration tests
-    def test_register_subject(self):
-        '''register_subject() - error case'''
-        self.asr.register_subject(self.event_type)
+    def test_register_group(self):
+        '''register_group() - error case'''
+        self.asr.register_group(self.event_type)
 
-    def test_register_subject_fail_for_invalid_subject(self):
-        '''register_subject() - error case'''
+    def test_register_group_fail_for_invalid_group(self):
+        '''register_group() - error case'''
         try:
-            self.asr.register_subject("%s-B" % self.event_type)
+            self.asr.register_group("%s-B" % self.event_type)
             self.fail(u'Should have thrown an InvalidGroupException.')
         except InvalidGroupException:
             pass
@@ -86,7 +86,7 @@ class TestTASR(TASRTestCase):
         except ValueError:
             pass
 
-    def test_register_fail_for_invalid_subject(self):
+    def test_register_fail_for_invalid_group(self):
         '''register_schema() - error case'''
         try:
             self.asr.register_schema("%s-B" % self.event_type, self.schema_str)
@@ -113,12 +113,12 @@ class TestTASR(TASRTestCase):
 
     # retrieval tests
     def test_lookup(self):
-        '''lookup_subject() - as expected'''
-        self.assertFalse(self.asr.lookup_subject(self.event_type),
-                         'Topic should not be registered yet.')
+        '''lookup_group() - as expected'''
+        self.assertFalse(self.asr.lookup_group(self.event_type),
+                         'Group should not be registered yet.')
         self.asr.register_schema(self.event_type, self.schema_str)
-        self.assertTrue(self.asr.lookup_subject(self.event_type),
-                        'Topic should be registered.')
+        self.assertTrue(self.asr.lookup_group(self.event_type),
+                        'Group should be registered.')
 
     def test_get_latest_for_topic(self):
         '''get_latest_schema_for_group() - as expected'''
@@ -243,37 +243,37 @@ class TestTASR(TASRTestCase):
             v_val = self.asr.redis.lindex('vid.%s' % self.event_type, ver)
             self.assertEqual(t_val, v_val, 'Mismatch at index %s' % ver)
 
-    def test_get_all_subjects(self):
-        '''get_all_subjects() - as expected'''
-        self.assertEqual(0, len(self.asr.get_all_subjects()),
+    def test_get_all_groups(self):
+        '''get_all_groups() - as expected'''
+        self.assertEqual(0, len(self.asr.get_all_groups()),
                          'should not be any topics yet')
         self.asr.register_schema(self.event_type, self.schema_str)
-        subjects = self.asr.get_all_subjects()
-        self.assertEqual(1, len(subjects), 'should have 1')
-        self.assertEqual(self.event_type, subjects[0].name,
-                         'expected subject missing')
+        groups = self.asr.get_all_groups()
+        self.assertEqual(1, len(groups), 'should have 1')
+        self.assertEqual(self.event_type, groups[0].name,
+                         'expected group missing')
         schema_str_2 = self.schema_str.replace('tagged.events',
                                                'tagged.events.alt', 1)
-        # reg another version -- should not increase number of topics
+        # reg another version -- should not increase number of groups
         self.asr.register_schema(self.event_type, schema_str_2)
-        subjects = self.asr.get_all_subjects()
-        self.assertEqual(1, len(subjects), 'should still have 1 subject')
+        groups = self.asr.get_all_groups()
+        self.assertEqual(1, len(groups), 'should still have 1 group')
 
-    def test_get_active_subjects(self):
-        '''get_active_subjects() - as expected'''
-        self.assertEqual(0, len(self.asr.get_all_subjects()),
-                         'should not be any topics yet')
-        self.assertEqual(0, len(self.asr.get_active_subjects()),
-                         'should not be any topics yet')
-        # reg the subject without a schema -- active count should still be 0
-        self.asr.register_subject(self.event_type)
-        self.assertEqual(1, len(self.asr.get_all_subjects()), 'should have 1')
-        self.assertEqual(0, len(self.asr.get_active_subjects()),
-                         'should not be any ACTIVE topics yet')
-        # now reg a schema for the subject
+    def test_get_active_groups(self):
+        '''get_active_groups() - as expected'''
+        self.assertEqual(0, len(self.asr.get_all_groups()),
+                         'should not be any groups yet')
+        self.assertEqual(0, len(self.asr.get_active_groups()),
+                         'should not be any groups yet')
+        # reg the group without a schema -- active count should still be 0
+        self.asr.register_group(self.event_type)
+        self.assertEqual(1, len(self.asr.get_all_groups()), 'should have 1')
+        self.assertEqual(0, len(self.asr.get_active_groups()),
+                         'should not be any ACTIVE groups yet')
+        # now reg a schema for the group
         self.asr.register_schema(self.event_type, self.schema_str)
-        self.assertEqual(1, len(self.asr.get_all_subjects()), 'should have 1')
-        self.assertEqual(1, len(self.asr.get_active_subjects()), 'should be 1')
+        self.assertEqual(1, len(self.asr.get_all_groups()), 'should have 1')
+        self.assertEqual(1, len(self.asr.get_active_groups()), 'should be 1')
 
     def test_multi_version_for_topic(self):
         '''get_versions_for_id_str_and_group() - as expected'''
@@ -294,27 +294,31 @@ class TestTASR(TASRTestCase):
         self.assertEqual(3, vlist[1], u'Expected second version to be 3.')
 
     # deletion tests
-    def test_delete_group_with_orphan_schema(self):
+    def test_delete_group(self):
+        '''Test that a group delete works.'''
         self.asr.register_schema(self.event_type, self.schema_str)
-        self.assertTrue(self.asr.lookup_subject(self.event_type),
-                        'Topic should be registered.')
+        self.assertTrue(self.asr.lookup_group(self.event_type),
+                        'Group should be registered.')
         self.asr.delete_group(self.event_type)
-        self.assertFalse(self.asr.lookup_subject(self.event_type),
-                         'Topic should not be registered any more.')
+        self.assertFalse(self.asr.lookup_group(self.event_type),
+                         'Group should not be registered any more.')
 
     def test_delete_group_with_cross_registered_schema(self):
+        '''Test that deleting a group with a schema version that is also
+        registered to a second group does not delete the still needed schema
+        version.'''
         alt_group_name = 'bob'
         self.asr.register_schema(self.event_type, self.schema_str)
         self.asr.register_schema(alt_group_name, self.schema_str)
-        self.assertTrue(self.asr.lookup_subject(self.event_type),
-                        'Topic should be registered.')
-        self.assertTrue(self.asr.lookup_subject(alt_group_name),
-                        'Topic should be registered.')
+        self.assertTrue(self.asr.lookup_group(self.event_type),
+                        'Group should be registered.')
+        self.assertTrue(self.asr.lookup_group(alt_group_name),
+                        'Group should be registered.')
         self.asr.delete_group(self.event_type)
-        self.assertFalse(self.asr.lookup_subject(self.event_type),
-                         'Topic should not be registered any more.')
-        self.assertTrue(self.asr.lookup_subject(alt_group_name),
-                        'Topic should be registered.')
+        self.assertFalse(self.asr.lookup_group(self.event_type),
+                         'Group should not be registered any more.')
+        self.assertTrue(self.asr.lookup_group(alt_group_name),
+                        'Group should be registered.')
 
 
 if __name__ == "__main__":

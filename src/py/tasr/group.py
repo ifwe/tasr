@@ -30,16 +30,15 @@ class Group(object):
     schema repository code.
     '''
 
-    def __init__(self, group_name, config_dict=None, validators=None):
+    def __init__(self, group_name, metadata_dict=None, validators=None):
         '''The name is required, the config_dict and validators are not.'''
         if not Group.validate_group_name(group_name):
             raise InvalidGroupException('Bad group name: \"%s\"' % group_name)
         self.name = group_name
-        self.timestamp = None
         self.current_schema = None
-        self.config = dict()
-        if config_dict:
-            self.config.update(config_dict)
+        self.metadata = dict()
+        if metadata_dict:
+            self.metadata.update(metadata_dict)
         self.validators = set()
         if validators:
             self.validators.update(validators)
@@ -52,6 +51,20 @@ class Group(object):
         if re.match(r'^\w+$', subject):
             return True
         return False
+
+    @property
+    def config(self):
+        cdict = dict()
+        if self.metadata:
+            for key, val in self.metadata.iteritems():
+                if key.startswith('config.'):
+                    cdict[key[7:]] = val
+        return cdict
+
+    @property
+    def timestamp(self):
+        if self.metadata and 'group_ts' in self.metadata:
+            return self.metadata['group_ts']
 
     @property
     def current_version(self):
