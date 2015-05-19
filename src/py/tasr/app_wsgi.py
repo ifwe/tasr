@@ -22,6 +22,7 @@ import json
 import logging
 import StringIO
 import tasr.tasr_config
+import re
 
 TASR_VERSION = 2
 
@@ -91,7 +92,17 @@ class TASRApp(bottle.Bottle):
         bottle.response.content_type = rctype
         log_request(bottle.response.status_code)
         if is_json_type(rctype):
-            return json_body(obj if json_obj == None else json_obj)
+            jbod = json_body(obj if json_obj == None else json_obj)
+            callback_fn = get_jsonp_callback()
+            if not callback_fn:
+                return jbod
+            elif re.match(r'.*\W.*', callback_fn):
+                self.abort(400, 'Invalid JSONP callback function name')
+            else:
+                # return a JSONP wrapped response
+                return ("/**/typeof %s==='function' && %s(%s)" %
+                        (callback_fn, callback_fn, jbod))
+
         elif not obj == None:
             # if we're not returning JSON and obj is not None, return as lines
             buff = StringIO.StringIO()
@@ -160,6 +171,15 @@ def is_pretty():
         if qk.strip().lower() == 'pretty':
             return True
     return False
+
+
+def get_jsonp_callback():
+    for qk in bottle.request.query.dict.keys():
+        if qk.strip().lower() == 'callback':
+            if len(bottle.request.query.dict[qk]) > 0:
+                if len(bottle.request.query.dict[qk][0]) > 0:
+                    return bottle.request.query.dict[qk][0]
+    return None
 
 
 def json_body(ob):
