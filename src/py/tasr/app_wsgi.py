@@ -90,19 +90,18 @@ class TASRApp(bottle.Bottle):
     def object_response(self, obj, json_obj=None, default_type='text/plain'):
         rctype = response_content_type(default_type)
         bottle.response.content_type = rctype
-        log_request(bottle.response.status_code)
-        if is_json_type(rctype):
-            jbod = json_body(obj if json_obj == None else json_obj)
-            callback_fn = get_jsonp_callback()
-            if not callback_fn:
-                return jbod
-            elif re.match(r'.*\W.*', callback_fn):
+        callback_fn = get_jsonp_callback()
+        if callback_fn and re.match(r'.*\W.*', callback_fn):
                 self.abort(400, 'Invalid JSONP callback function name')
-            else:
-                # return a JSONP wrapped response
-                return ("/**/typeof %s==='function' && %s(%s)" %
-                        (callback_fn, callback_fn, jbod))
 
+        log_request(bottle.response.status_code)
+        if callback_fn:
+            # return a JSONP wrapped response
+            jbod = json_body(obj if json_obj == None else json_obj)
+            return ("/**/typeof %s==='function' && %s(%s)" %
+                    (callback_fn, callback_fn, jbod))
+        elif is_json_type(rctype):
+            return json_body(obj if json_obj == None else json_obj)
         elif not obj == None:
             # if we're not returning JSON and obj is not None, return as lines
             buff = StringIO.StringIO()
