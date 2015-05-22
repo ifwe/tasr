@@ -98,7 +98,7 @@ class TASRApp(bottle.Bottle):
         if callback_fn:
             # return a JSONP wrapped response
             jbod = json_body(obj if json_obj == None else json_obj)
-            return ("/**/typeof %s==='function' && %s(%s)" %
+            return ("/**/typeof %s==='function' && %s(%s);" %
                     (callback_fn, callback_fn, jbod))
         elif is_json_type(rctype):
             return json_body(obj if json_obj == None else json_obj)
