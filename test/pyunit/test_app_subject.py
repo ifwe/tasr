@@ -284,6 +284,20 @@ class TestTASRSubjectApp(TASRTestCase):
         self.abort_diff_status(resp, 200)
         self.assertEqual(resp.body.strip(), self.event_type, 'value mismatch')
 
+    def test_get_subject_config_entry_as_json(self):
+        '''GET /tasr/subject/<subject>/config/<key> - get as JSON'''
+        resp = self.tasr_app.put(self.subject_url,
+                                 {'subject_name': self.event_type},
+                                 expect_errors=False)
+        self.abort_diff_status(resp, 201)
+        url = '%s/config/%s' % (self.subject_url, 'subject_name')
+        resp = self.tasr_app.request(url, headers={'Accept': 'text/json'},
+                                     method='GET')
+        self.abort_diff_status(resp, 200)
+        expected_dict = {'subject_name': self.event_type}
+        json_dict = json.loads(resp.body.strip())
+        self.assertDictEqual(json_dict, expected_dict, 'mismatch')
+
     def test_set_subject_config_entry_overwrite(self):
         '''POST /tasr/subject/<subject>/config/<key> - get a config value'''
         resp = self.tasr_app.put(self.subject_url,

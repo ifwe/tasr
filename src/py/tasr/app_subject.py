@@ -220,7 +220,7 @@ def get_subject_config_entry(subject_name=None, key=None):
     if not key in subject.config:
         TASR_SUBJECT_APP.abort(404, ('No %s in config for %s.' %
                                      (key, subject_name)))
-    return subject.config[key]
+    return TASR_SUBJECT_APP.subject_config_entry_response(subject, key)
 
 
 @TASR_SUBJECT_APP.post('/<subject_name>/config/<key>')

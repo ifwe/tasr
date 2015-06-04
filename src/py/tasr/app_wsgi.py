@@ -136,6 +136,18 @@ class TASRApp(bottle.Bottle):
                 prop_list.append('%s=%s\n' % (key, val))
         return self.object_response(prop_list, subject.config)
 
+    def subject_config_entry_response(self, subject, key):
+        '''Returns the config entry for the subject if JSON is accepted.
+        Standard subject headers.  If JSON is not accepted, returns the
+        value for the entry as a string.
+        '''
+        bot = tasr.headers.SubjectHeaderBot(bottle.response, subject)
+        bot.standard_headers()
+        if subject.config and subject.config[key]:
+            val = subject.config[key]
+            return self.object_response(val, {key: val})
+        return self.object_response(None, subject.as_dict())
+
     def schema_response(self, reg_schema, subject_name=None):
         '''Return the schema JSON for a registered schema.  The body will
         _ALWAYS_ be JSON, even if the client does not specifically accept it.
