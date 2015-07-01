@@ -14,9 +14,9 @@ products remains unencumbered for use by the whole community.
 
 Please review and submit this Agreement per [the instructions](./CLA_Process.md).
 
-A text-only version of this document is available at ./CLA.txt.
+A text-only version of this document is available [here](./CLA.txt).
 
-A PDF version of this document is available at ./CLA.pdf.
+A PDF version of this document is available [here](./CLA.pdf).
 
 Please read the following document carefully before signing and keep a copy for
 your records.
