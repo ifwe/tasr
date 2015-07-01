@@ -13,7 +13,7 @@ setup(
 
     # metadata for upload to PyPI
     author = 'Chris Mills',
-    author_email = 'cmills@tagged.com',
+    author_email = 'cmills@ifwe.co',
     license = '',
     keywords = 'Redis Avro Schema Repository Camus',
     url = '',
