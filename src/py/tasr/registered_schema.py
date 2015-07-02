@@ -13,6 +13,13 @@ import avro.schema
 import collections
 import json
 import logging
+import sys
+
+if sys.version_info[0] == 2:
+    if sys.version_info[1] == 6:
+        from ordereddict import OrderedDict
+    if sys.version_info[1] == 7:
+        from collections import OrderedDict
 
 MD5_BYTES = 16
 SHA256_BYTES = 32
@@ -371,7 +378,7 @@ def build_pcf(env, schema):
 
 
 def ordered_json_obj(json_str):
-    return json.loads(json_str, object_pairs_hook=collections.OrderedDict)
+    return json.loads(json_str, object_pairs_hook=OrderedDict)
 
 
 class RegisteredAvroSchema(RegisteredSchema):
