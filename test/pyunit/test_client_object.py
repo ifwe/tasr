@@ -43,7 +43,7 @@ class TestTASRClientObject(TestTASRAppClient):
         # schema string so we have an accurate target for comparison
         ras = tasr.registered_schema.RegisteredAvroSchema()
         ras.schema_str = schema_str
-        canonical_schema_str = ras.canonical_schema_str
+        canonical_schema_str = ras.json
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client.TASRClientSV(self.host, self.port)
             rs = client.register_schema(self.event_type, schema_str)
@@ -149,7 +149,7 @@ class TestTASRClientObject(TestTASRAppClient):
                 # comparison
                 ras = tasr.registered_schema.RegisteredAvroSchema()
                 ras.schema_str = ver_schema_str
-                canonical_ver_schema_str = ras.canonical_schema_str
+                canonical_ver_schema_str = ras.json
                 schemas.append(canonical_ver_schema_str)
                 # reg with the non-canonicalized schema string
                 rs = self.obj_register_schema_skeleton(ver_schema_str)
@@ -178,7 +178,7 @@ class TestTASRClientObject(TestTASRAppClient):
                 # comparison
                 ras = tasr.registered_schema.RegisteredAvroSchema()
                 ras.schema_str = ver_schema_str
-                canonical_ver_schema_str = ras.canonical_schema_str
+                canonical_ver_schema_str = ras.json
                 test_schema_strs.append(canonical_ver_schema_str)
                 # reg with the non-canonicalized schema string
                 rs = self.obj_register_schema_skeleton(ver_schema_str)
@@ -194,8 +194,8 @@ class TestTASRClientObject(TestTASRAppClient):
             for v in range(1, 50):
                 reg_schema = schemas[v - 1]
                 test_schema_str = test_schema_strs[v - 1]
-                self.assertEqual(reg_schema.canonical_schema_str,
-                                 test_schema_str, 'schema string mismatch')
+                self.assertEqual(reg_schema.json, test_schema_str,
+                                 'schema string mismatch')
 
     ########################################################################
     # subject schema registration tests
@@ -282,8 +282,7 @@ class TestTASRClientObject(TestTASRAppClient):
         reg_rs = self.obj_register_schema_skeleton(self.schema_str)
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client.TASRClientSV(self.host, self.port)
-            ret_rs = client.lookup_by_schema_str(self.event_type,
-                                                 reg_rs.canonical_schema_str)
+            ret_rs = client.lookup_by_schema_str(self.event_type, reg_rs.json)
             self.assertEqual(reg_rs.sha256_id, ret_rs.sha256_id, 'ID mismatch')
 
     def obj_lookup_by_version_skeleton(self, topic, version):
@@ -311,7 +310,7 @@ class TestTASRClientObject(TestTASRAppClient):
             # schema string so we have an accurate target for comparison
             ras = tasr.registered_schema.RegisteredAvroSchema()
             ras.schema_str = ver_schema_str
-            canonical_ver_schema_str = ras.canonical_schema_str
+            canonical_ver_schema_str = ras.json
             schemas.append(canonical_ver_schema_str)
             # reg with the non-canonicalized schema string
             rs = self.obj_register_schema_skeleton(ver_schema_str)
@@ -322,8 +321,7 @@ class TestTASRClientObject(TestTASRAppClient):
         # now pull them by version and check they match what we sent originally
         for v in range(1, 50):
             rs = self.obj_lookup_by_version_skeleton(self.event_type, v)
-            self.assertEqual(schemas[v - 1], rs.canonical_schema_str,
-                             'Unexpected version.')
+            self.assertEqual(schemas[v - 1], rs.json, 'Unexpected version.')
 
     def test_obj_lookup_by_version_old_version(self):
         '''TASRClientSV.get_schema_for_topic() - non-sequential re-reg'''
@@ -336,7 +334,7 @@ class TestTASRClientObject(TestTASRAppClient):
         # now get version 1 -- should be same schema, and should list
         # requested version as "current"
         rs = self.obj_lookup_by_version_skeleton(self.event_type, 1)
-        self.assertEqual(rs1.canonical_schema_str, rs.canonical_schema_str,
+        self.assertEqual(rs1.json, rs.json,
                          'Unexpected schema string change between v1 and v3.')
         self.assertEqual(1, rs.current_version(self.event_type),
                         'Expected different current version value.')
@@ -352,7 +350,7 @@ class TestTASRClientObject(TestTASRAppClient):
             # schema string so we have an accurate target for comparison
             ras = tasr.registered_schema.RegisteredAvroSchema()
             ras.schema_str = ver_schema_str
-            canonical_ver_schema_str = ras.canonical_schema_str
+            canonical_ver_schema_str = ras.json
             schemas.append(canonical_ver_schema_str)
             # reg with the non-canonicalized schema string
             rs = self.obj_register_schema_skeleton(ver_schema_str)
@@ -369,8 +367,7 @@ class TestTASRClientObject(TestTASRAppClient):
                 sha256_id = sha256_ids[v - 1]
                 schema_str = schemas[v - 1]
                 rs = client.lookup_by_id_str(self.event_type, sha256_id)
-                self.assertEqual(schema_str, rs.canonical_schema_str,
-                                 'schema string mismatch')
+                self.assertEqual(schema_str, rs.json, 'schema string mismatch')
 
     def test_bare_lookup_latest(self):
         self.obj_register_schema_skeleton(self.schema_str)

@@ -103,10 +103,22 @@ class RegisteredSchema(object):
     with @property methods.
     '''
     def __init__(self):
-        self.schema_str = None
+        self._schema_str = None
         self.gv_dict = dict()
         self.ts_dict = dict()
         self.created = False
+
+    @property
+    def schema_str(self):
+        return self._schema_str
+
+    @schema_str.setter
+    def schema_str(self, value):
+        self.clear_cache()
+        self._schema_str = value
+
+    def clear_cache(self):
+        pass
 
     def update_from_dict(self, rs_dict):
         '''A dict containing a schema and topic-version and topic-timestamp
@@ -141,7 +153,7 @@ class RegisteredSchema(object):
         '''Outputs the object as a dict.'''
         rs_dict = dict()
         rs_dict.update(self.as_schema_metadata().as_dict())
-        rs_dict['schema'] = self.canonical_schema_str
+        rs_dict['schema'] = self.schema_str
         # overwrite the SHA256 and MD5 IDs with ones derived from the schema
         rs_dict['sha256_id'] = 'id.%s' % self.sha256_id
         rs_dict['md5_id'] = 'id.%s' % self.md5_id
@@ -149,7 +161,7 @@ class RegisteredSchema(object):
 
     @property
     def canonical_schema_str(self):
-        '''The split() and join() normalizes whitespace.'''
+        '''Generic canonicalization just normalizes whitespace.'''
         if not self.schema_str:
             return None
         elems = self.schema_str.split()
@@ -237,8 +249,7 @@ class RegisteredSchema(object):
 
     @property
     def is_valid(self):
-        '''Access the schema validity as a boolean property.
-        '''
+        '''Access the schema validity as a boolean property.'''
         try:
             return self.validate_schema_str()
         except avro.schema.SchemaParseException:
@@ -269,11 +280,10 @@ class RegisteredSchema(object):
         return None
 
     def __repr__(self):
-        return '%r' % self.canonical_schema_str
+        return u'%s[%s]' % (self.__class__.__name__, self.sha256_id)
 
     def __str__(self):
-        return u'%s[%s, %s]' % (self.__class__.__name__,
-                                self.sha256_id, self.gv_dict)
+        return '%r' % self.schema_str
 
     def __eq__(self, other):
         '''Registered schemas are equal when the underlying canonical schema
@@ -292,53 +302,143 @@ class RegisteredSchema(object):
         return False
 
 
-def ordered_object(obj):
-    '''A recursive method to alpha-order potentially nested collection objects
-    in a repeatable way.  Basically, wherever there is a non-ordered collection
-    order it by the alpha order of the keys.  Dict objects become OrderedDict
-    objects.  Lists remain lists (and order is preserved).
+def build_pcf(env, schema):
+    '''Returns the "Parsing Canonical Form" (PCF) of a passed Avro schema
+    object as defined in:
 
-    We use this here to help with canonicalization of Avro schemas.
+        http://avro.apache.org/docs/1.7.6/spec.html#Parsing+Canonical+Form+for+Schemas
+
+    This is a recursive method. The PCF string should be used for calculating
+    hashes and comparing versions as it removes non-functional elements and
+    normalizes formatting.
+
+    The PCF only keeps atrtibutes involved in parsing, that is: type, name,
+    fields, symbols, items, values, size.  Note that default is NOT here. The
+    PCF also enforces a canonical order of attributes for elements, namely:
+    name, type, fields, symbols, items, values, size.
     '''
-    if obj and hasattr(obj, '__iter__'):
-        if isinstance(obj, dict):
-            # for a dict, we want to alpha order by key
-            odict = collections.OrderedDict()
-            for key in sorted(obj.keys()):
-                # recurse to order the value object
-                odict[key] = ordered_object(obj[key])
-            return odict
-        elif isinstance(obj, list):
-            processed_list = []
-            for elem in obj:
-                # recurse to order the value object
-                processed_list.append(ordered_object(elem))
-            return processed_list
-    # if the object is a leaf, just return it as is
-    return obj
+
+    pcf = None
+    firstElem = True
+    if env == None:
+        env = dict()
+
+    if schema.type in avro.schema.PRIMITIVE_TYPES:
+        pcf = u'"%s"' % schema.type
+    elif schema.type == u'union':
+        pcf = u'['
+        for us in schema.schemas:
+            if firstElem:
+                firstElem = False
+            else:
+                pcf += u','
+            pcf += build_pcf(env, us)
+        pcf += u']'
+    elif schema.type == u'array':
+        pcf = (u'{"type":"%s","items":%s}' %
+               (schema.type, build_pcf(env, schema.items)))
+    elif schema.type == u'map':
+        pcf = (u'{"type":"%s","values":%s}' %
+               (schema.type, build_pcf(env, schema.values)))
+    elif schema.type in avro.schema.NAMED_TYPES:
+        # covers enum, fixed, record, and error types
+        pcf = ''
+        name = schema.fullname
+        if name in env:
+            pcf += env[name]
+            return pcf
+        qname = u'"%s"' % name
+        env[name] = qname
+        pcf += u'{"name":%s,"type":"%s"' % (qname, schema.type)
+        if schema.type == u'enum':
+            pass
+        elif schema.type == u'fixed':
+            pass
+        elif schema.type == u'record':
+            pcf += u',"fields":['
+            for sf in schema.fields:
+                if firstElem:
+                    firstElem = False
+                else:
+                    pcf += u','
+                pcf += (u'{"name":"%s","type":%s}' %
+                        (sf.name, build_pcf(env, sf.type)))
+            pcf += ']'
+        else:  # i.e. -- error type
+            pass
+        pcf += '}'
+    return pcf
+
+
+def ordered_json_obj(json_str):
+    return json.loads(json_str, object_pairs_hook=collections.OrderedDict)
 
 
 class RegisteredAvroSchema(RegisteredSchema):
     '''Adds an Avro schema validation function.'''
     def __init__(self):
         super(RegisteredAvroSchema, self).__init__()
-        self.schema = None
-        self.ordered = None
+        self.clear_cache()
+
+    def clear_cache(self):
+        self._schema = None
+        self._pcf = None
+        self._json_obj = None
+        self._json = None
+
+    @property
+    def schema(self):
+        if not self.schema_str:
+            return None
+        elif self.schema_str and not self._schema:
+            try:
+                self._schema = avro.schema.parse(self.schema_str)
+            except avro.schema.SchemaParseException as spe:
+                raise ValueError("Failed to parse schema: %s" % spe)
+        return self._schema
+
+    @property
+    def pcf(self):
+        '''Accessing PCF this way caches the build_pcf results.  Remember, the
+        PCF strips defaults.'''
+        if self.schema_str == None:
+            return None
+        if not self._pcf:
+            self._pcf = build_pcf(dict(), self.schema)
+        return self._pcf
+
+    @property
+    def json_obj(self):
+        if not self.schema_str:
+            return None
+        if not self._json_obj:
+            self._json_obj = ordered_json_obj(str(self.schema))
+        return self._json_obj
+
+    @property
+    def json(self):
+        if not self.schema_str:
+            return None
+        if not self._json:
+            self._json = json.dumps(self.json_obj)
+        return self._json
 
     @property
     def canonical_schema_str(self):
-        if not self.ordered and self.schema_str:
-            self.ordered = ordered_object(json.loads(self.schema_str))
-        return json.dumps(self.ordered) if self.ordered else None
+        '''Alternate sig, also uses cached copy if available.'''
+        return self.pcf
+
+    def __str__(self):
+        return self.schema_str
 
     def validate_schema_str(self):
+        '''Always checks the actual schema string directly.'''
         if not super(RegisteredAvroSchema, self).validate_schema_str():
             return False
-
-        # a parse exception should bubble up, so don't catch it here
-        self.schema = avro.schema.parse(self.canonical_schema_str)
-
-        # add additional checks?
+        try:
+            avro.schema.parse(self.schema_str)
+        except avro.schema.SchemaParseException as spe:
+            raise ValueError("Bad schema: %s" % spe)
         return True
 
     def back_compatible_with(self, obj):
@@ -362,83 +462,243 @@ class RegisteredAvroSchema(RegisteredSchema):
             logging.warn(err)
             return False
 
-    @staticmethod
-    def is_valid_avro_schema(schema_str):
-        '''Checks whether the passed string is valid Avro (can be parsed).'''
-        test_schema = RegisteredAvroSchema()
-        test_schema.schema_str = schema_str
-        try:
-            return test_schema.validate_schema_str()
-        except ValueError:
-            return False
-        except avro.schema.SchemaParseException:
-            return False
-
 
 class MasterAvroSchema(RegisteredAvroSchema):
-    '''Checks whether the current schema is a valid extension of the schema
-    or list of schemas passed to the method.  For purposes of discussion,
-    there are 4 basic kinds of field we care about:
+    '''A MasterAvroSchema (MAS) is an Avro schema constructed from a list of
+    compatible Avro schema versions. By "compatible" here we mean that every
+    field in each of the versions can be mapped to a field in the master, that
+    fields in different versions may not have conflicting types, and that
+    optional fields (those with a union type of a null plus a non-null type)
+    have a default.
 
-        - REQ: fixed type, a required field (missing == invalid), no nulls
-        - ID: fixed type, enables demo segmentation, no changes, no nulls
-        - PART: fixed type, enables partitioning, no changes, no nulls
-        - OPT: union type, allow nulls, must have a null default
+    For purposes of discussion, there are 3 kinds of field we care about:
 
-    For an Avro schema to be back-compatible (in our system) with previous
-    versions:
+        - REQ: primitive type, a required field (missing == invalid), no nulls
+        - OPT: union type of null plus a primitive type, with a null default
+        - FIXED: any other allowable Avro type
 
-        - The non-fields document elements must remain the same.
-        - Field _order_ may be changed.
-        - REQ fields may convert to ID, PART or OPT fields, but may not revert.
-        - There may be a maximum of _one_ ID field.
-        - There may be a maximum of _one_ PART field.
-        - Once a REQ field has become an ID or PART field, it may not change.
-        - OPT fields must have a union type with 'null' and one other type.
-        - OPT fields must have a 'null' default value.
-        - OPT fields may be added or removed across schema versions.
-        - A REQ that becomes an OPT must use the original type as the non-null
-           type in the union.
-        - Removal of a REQ field is treated as an implicit conversion to an OPT
-           field followed by a removal of that field.
-        - A removed field (REQ or OPT) may only ever return as an OPT field
-           with a union type of 'null' and the original non-null type.
+    The first schema version can have any valid combination of REQ, OPT and
+    FIXED fields.  All subsequent schema versions are constrained by previous
+    versions in the following ways:
+
+        - Field order may change.  This will result in a different PCF, and a
+            different hash-based ID.  But such a change _is_ compatible.
+        - The PCF of FIXED fields must remain the same.  Defaults can change.
+        - A REQ field may convert to an OPT where the REQ type is kept as the
+            non-null type in the OPT type union.  There must be a null default.
+        - REQ and OPT fields may be deleted (REQ->OPT is implicit for REQ)
+        - Deleted fields may return as OPT fields when the non-null field stays
+            the same.
+
+    From the sequence of compatible schema versions we can construct a master
+    schema (the MAS) which will have ALL the fields that have been in any
+    version in the sequence.  If a field has been a REQ and an OPT, the OPT
+    will be used.  The last default for each field will be used.
 
     Why do we care?  Hive, basically.  The files in HDFS each contain their
     own serialization schema in the header.  However, for the abstraction
     that all those files are really a table with a shared table structure
-    to work, we need to make sure that there is a 'master' view that covers
-    all the schema versions.  It's OK if some versions have fields that
-    others do not as long as Hive can default the void to a null, but we
-    cannot have fields with conflicting definitions.
+    to work, we need to make sure that there is a 'master' view that covers all
+    the schema versions.  It's OK if some versions have fields that others do
+    not as long as Hive can default the void to a null, but we cannot have
+    fields with conflicting definitions -- hence the rules above.
 
-    Note that there are legacy schema versions with a union type, allowing
-    nulls, but no default.  These are allowed as old versions, but when
-    present in the current object make it non-back-compatible.
-
-    ADDENDUM: We do support map fields, but we don't support evolution of those
-    fields.  That is, once a field with a map type (or a union of null and a
-    map type) is added, it has to remain unchanged to be "compatible" in this
-    context.  This is not strictly the same thing as Avro compatibility, but
-    is the right definition of compatibility for our purposes.
+    The FIXED fields are there to allow more complex schemas -- maps, records
+    and the like.  Our boilerplate uses map for kvpairs, and array to hold
+    handler records, so we use this already.  Handling evolution for these more
+    complex fields is tricky, so we dodge it for the time being and force them
+    to remain the same across versions.
     '''
 
-    def __init__(self, slist):
+    def __init__(self, slist=None):
         super(MasterAvroSchema, self).__init__()
         self.schema_list = None
-        self.e_namespace = None
-        self.e_type = None
-        self.e_name = None
-        self.id_field = None
-        self.part_field = None
-        self.required_fields = dict()
-        self.opt_fields = dict()
-        self.complex_fields = dict()
-        self.map_fields = dict()
-        self.field_name_list = None
-        self.deleted_field_names = None
-        # if one was provided, set it
         self.set_schema_list(slist)
+
+    def clear_cache(self):
+        super(MasterAvroSchema, self).clear_cache()
+
+    @property
+    def master_schema_string(self):
+        '''Checking version validity happens on adds.  We can assume anything
+        that made it through the add is valid.'''
+        if not self.schema_list or len(self.schema_list) == 0:
+            return None
+        m_name = None
+        m_type = None
+        m_fields = dict()
+        for sv in self.schema_list:
+            # name and type should not change between versions
+            m_name = sv.fullname
+            m_type = sv.type
+            for svf in sv.fields:
+                m_fields[svf.name] = svf
+        # put in alpha field name order
+        om_fields = collections.OrderedDict()
+        for key in sorted(m_fields.keys()):
+            om_fields[key] = m_fields[key]
+        # setting this allows us to use build_pcf on the fields directly
+        env = dict()
+        env[m_name] = u'"%s"' % m_name
+
+        first_elem = True
+        mss = u'{"name":"%s","type":"%s","fields":[' % (m_name, m_type)
+        for mfname, mf in om_fields.iteritems():
+            if first_elem:
+                first_elem = False
+            else:
+                mss += u','
+            if mf.type.type == u'union':
+                mss += u'{"name":"%s","default":null,' % mfname
+            else:
+                mss += u'{"name":"%s",' % mfname
+            mss += '"type":%s}' % build_pcf(env, mf.type)
+        mss += u']}'
+        return mss
+
+    def add_schema_version(self, sv):
+        '''Try to add a schema version to the existing MAS. An incompatible ver
+        will return a list of error strings.  A compatible ver will update the
+        MAS and return None.  The schema version can be passed in as either an
+        RAS or a schema string.'''
+        ras = None
+        if isinstance(sv, basestring):
+            ras = RegisteredAvroSchema()
+            ras.schema_str = sv
+        elif isinstance(sv, RegisteredAvroSchema):
+            ras = sv
+        else:
+            raise ValueError('Passed object not a schema string or a RAS')
+        if not ras.is_valid:
+            raise ValueError("Schema version is internally invalid.")
+
+        if self.schema_list == None:
+            self.schema_list = []
+
+        if len(self.schema_list) > 0:
+            # already have version(s), check for issues
+            ilist = self.incompatibilities(ras)
+            if ilist and len(ilist) > 0:
+                err_str = ''
+                for issue in ilist:
+                    err_str += '%s\n' % issue
+                raise ValueError(err_str)
+        self.schema_list.append(ras.schema)
+        self.schema_str = self.master_schema_string
+
+    @staticmethod
+    def check_field(field):
+        if not isinstance(field, avro.schema.Field):
+            return ["Passed object not an avro.schema.Field."]
+        if not field.type or not isinstance(field.type, avro.schema.Schema):
+            return ["Passed Field does not contain a valid Schema type."]
+        return
+
+    @staticmethod
+    def check_req_field(field, old_field=None):
+        err = MasterAvroSchema.check_field(field)
+        if err:
+            return err
+        schema = field.type
+        # now check the schema for issues
+        if schema.type in avro.schema.PRIMITIVE_TYPES:
+            if schema.type == u'null':
+                return ["REQ field's schema type is null."]
+            if old_field and old_field.type.type != schema.type:
+                return ["REQ field cannot change types."]
+            # looks OK
+            return
+        return ["REQ field's schema type is %s." % schema.type]
+
+    @staticmethod
+    def check_opt_field(field, old_field=None):
+        err = MasterAvroSchema.check_field(field)
+        if err:
+            return err
+        schema = field.type
+        if not isinstance(schema, avro.schema.UnionSchema):
+            return ["OPT field not a union type."]
+        if not len(schema.schemas) == 2:
+            return ["OPT field does not have a 2 schema union."]
+        # order is not fixed, so pull schema objects from union
+        null_schema = None
+        core_schema = None
+        for s in schema.schemas:
+            if s.type == u'null':
+                null_schema = s
+                continue
+            if s.type in avro.schema.PRIMITIVE_TYPES:
+                core_schema = s
+                continue
+            return ["OPT field union contains non-primitive type."]
+        # now check schema objects against OPT requirements
+        if not null_schema:
+            return ["OPT field union missing a null schema."]
+        if not core_schema:
+            return ["OPT field union missing a non-null schema."]
+        if old_field:
+            old_core_schema = None
+            if old_field.type.type in avro.schema.PRIMITIVE_TYPES:
+                # REQ->OPT is OK
+                old_core_schema = old_field.type
+            elif isinstance(old_field, avro.schema.UnionSchema):
+                # OPT->OPT is OK if core type stays the same
+                for s in old_field.type.schemas:
+                    if s.type != u'null':
+                        old_core_schema = s
+                        break
+            else:
+                return ["OPT field used to be FIXED."]
+            if old_core_schema:
+                if old_core_schema.type != core_schema.type:
+                    return ["OPT field changed non-null union type."]
+
+    def incompatibilities(self, ras):
+        i_list = []
+        master = avro.schema.parse(self.master_schema_string)
+        if master.name != ras.schema.fullname:
+            i_list.append("Name or namespace change.")
+        if master.type != ras.schema.type:
+            i_list.append("Top-level type change.")
+        mfd = dict()
+        for mf in master.fields:
+            mfd[mf.name] = mf
+        for nf in ras.schema.fields:
+            if nf.name in mfd:
+                # old field collision -- new field must be equal or REQ->OPT
+                mf = mfd.pop(nf.name)
+                if nf == mf:
+                    # fields are the same
+                    continue
+                elif build_pcf(dict(), nf.type) == build_pcf(dict(), mf.type):
+                    # field PCFs are the same
+                    continue
+                # check the new field is an OK mod (i.e. -- REQ->OPT)
+                opt_issues = MasterAvroSchema.check_opt_field(nf, mf)
+                if opt_issues:
+                    for issue in opt_issues:
+                        i_list.append(issue)
+            else:
+                # new field -- must be OPT
+                opt_issues = MasterAvroSchema.check_opt_field(nf)
+                if opt_issues:
+                    if not MasterAvroSchema.check_req_field(nf):
+                        i_list.append("Cannot ADD REQ field after first ver.")
+                        continue
+                    for issue in opt_issues:
+                        i_list.append(issue)
+        # remaining fields in mfd were not in passed RAS -- must be REQ or OPT
+        for _mf_name, mf in mfd.iteritems():
+            if not MasterAvroSchema.check_opt_field(mf):
+                # removing an OPT is fine
+                continue
+            elif not MasterAvroSchema.check_req_field(mf):
+                # removing a REQ is fine
+                continue
+            else:
+                i_list.append("Cannot remove a FIXED field.")
+        if len(i_list) > 0:
+            return i_list
 
     def set_schema_list(self, slist):
         '''Sets the list of RegisteredAvroSchema objects that make up the
@@ -448,292 +708,22 @@ class MasterAvroSchema(RegisteredAvroSchema):
             self.schema_list = None
             logging.debug('Not a list.')
             return
-
-        is_first_version = True
-        self.schema_list = []
         for elem in slist:
-            ras = None
-            # these can be JSON schema defs or actual RAS objects
-            if isinstance(elem, basestring):
-                ras = RegisteredAvroSchema()
-                ras.schema_str = elem
-            elif isinstance(elem, RegisteredAvroSchema):
-                ras = elem
-            else:
-                raise ValueError('Not a schema string or a RAS')
-            if not ras.canonical_schema_str:  # also ensures ordered available
-                raise ValueError('RAS has no canonical schema string')
-
-            # we use the ordered dict as a convenient way to check the version
-            ver = ras.ordered
-            if not basic_schema_dict_valid(ver, mas=self):
-                raise ValueError('Non-field element mismatch.')
-            if (self.e_namespace == None
-                and self.e_type == None
-                and self.e_name == None):
-                self.e_namespace = ver['namespace']
-                self.e_type = ver['type']
-                self.e_name = ver['name']
-
-            # check present fields
-            self.field_name_list = []
-            for field in ver['fields']:
-                sfield = SchemaField(field, is_first_version)
-                self.field_name_list.append(sfield.name)
-                if sfield.is_complex:
-                    # we don't really check complex fields for compatibility,
-                    # you are on your own in this case
-                    self.complex_fields[sfield.name] = field
-                elif sfield.is_map:
-                    # map values need to remain unchanged to be compatible
-                    if sfield.name in self.map_fields.keys():
-                        old_values = self.map_fields[sfield.name]['values']
-                        if sfield.map_values != old_values:
-                            _msg = 'map values changed (%s)' % sfield.name
-                            raise ValueError(_msg)
-                elif sfield.is_required == False:
-                    # OPT field -- ID -> OPT and PART -> OPT are not allowed
-                    #if self.id_field and field == self.id_field:
-                    #    raise ValueError('ID -> OPT for %s' % sfield.name)
-                    #if self.part_field and field == self.part_field:
-                    #    raise ValueError('PART -> OPT for %s' % sfield.name)
-                    if sfield.name in self.required_fields.keys():
-                        # REQ -> OPT is allowed
-                        old_type = self.required_fields[sfield.name]['type']
-                        if not old_type in sfield.type:
-                            raise ValueError('REQ -> OPT incompatible types')
-                        self.required_fields.pop(sfield.name)
-                        self.opt_fields[sfield.name] = field
-                    elif sfield.name in self.opt_fields.keys():
-                        # OPT -> OPT, so check it's the same
-                        if self.opt_fields[sfield.name] != field:
-                            raise ValueError('OPT field mismatch: %s != %s' %
-                                             (self.opt_fields[sfield.name],
-                                              field))
-                    else:
-                        # new OPT field
-                        self.opt_fields[sfield.name] = field
-
-                elif sfield.is_required:
-                    if sfield.name in self.required_fields.keys():
-                        # never allow REQ -> REQ' changes
-                        if field != self.required_fields[sfield.name]:
-                            _msg = ('REQ field mismatch: %s != %s' %
-                                    (self.required_fields[sfield.name], field))
-                            raise ValueError(_msg)
-                    elif is_first_version:
-                        # allow new REQ fields in ver 1
-                        self.required_fields[sfield.name] = field
-                    else:
-                        raise ValueError('Cannot add REQ fields after ver 1.')
-                else:
-                    # shouldn't happen
-                    raise ValueError('WTF?  %s' % field)
-                # end of present fields loop -- check for disallowed deletion
-                if self.id_field:
-                    if not self.id_field['name'] in self.field_name_list:
-                        raise ValueError('Cannot delete ID field.')
-                if self.part_field:
-                    if not self.part_field['name'] in self.field_name_list:
-                        raise ValueError('Cannot delete PART field.')
-            is_first_version = False
-            # end of ver loop
-
-            # build deleted fields list
-            self.deleted_field_names = []
-            for fname in self.required_fields.keys():
-                if not fname in self.field_name_list:
-                    self.deleted_field_names.append(fname)
-            for fname in self.opt_fields.keys():
-                if not fname in self.field_name_list:
-                    self.deleted_field_names.append(fname)
-
-            # now create the master schema string
-            mfields = []
-            # add the retained fields in the most recent order
-            for fname in self.field_name_list:
-                if fname in self.required_fields:
-                    mfields.append(self.required_fields[fname])
-                elif fname in self.opt_fields:
-                    mfields.append(self.opt_fields[fname])
-                elif fname in self.complex_fields:
-                    mfields.append(self.complex_fields[fname])
-            # tack the deleted fields on the end
-            for fname in self.deleted_field_names:
-                if fname in self.required_fields:
-                    mfields.append(self.required_fields[fname])
-                elif fname in self.opt_fields:
-                    mfields.append(self.opt_fields[fname])
-            # now create the ordered dict holding it all
-            odict = collections.OrderedDict()
-            odict['namespace'] = self.e_namespace
-            odict['type'] = self.e_type
-            odict['name'] = self.e_name
-            odict['fields'] = mfields
-            # and from that, set the schema_str
-            self.schema_str = json.dumps(odict)
+            self.add_schema_version(elem)
 
     def is_compatible(self, obj):
         '''Tests whether a passed RegisteredAvroSchema object is a compatible
         extension to the MasterAvroSchema object.'''
-        if self.schema_list == None:
-            raise ValueError('No versions in master.')
-
         if not obj or not isinstance(obj, RegisteredAvroSchema):
             # only RAS objects can be compatible
             logging.debug('Not a non-null RegisteredAvroSchema')
             return False
 
-        if not obj.canonical_schema_str:
-            # short cut, also ensured obj.ordered is available
-            return False
-
-        ver = obj.ordered
-        if not basic_schema_dict_valid(ver, mas=self):
-            return False
-
-        # check fields
-        for field in ver['fields']:
-            try:
-                sfield = SchemaField(field)
-                if sfield.is_complex:
-                    # we don't really check complex fields for compatibility,
-                    # you are on your own in this case
-                    logging.debug('complex field %s', sfield.name)
-                    continue
-                elif sfield.is_map:
-                    # map values need to remain unchanged to be compatible
-                    if sfield.name in self.map_fields.keys():
-                        old_values = self.map_fields[sfield.name]['values']
-                        if sfield.map_values != old_values:
-                            _msg = 'map values changed (%s)' % sfield.name
-                            logging.debug(_msg)
-                            return False
-                elif sfield.is_required == False:
-                    if sfield.name in self.required_fields.keys():
-                        # REQ -> OPT is allowed
-                        old_type = self.required_fields[sfield.name]['type']
-                        if not old_type in sfield.type:
-                            logging.debug('REQ -> OPT incompatible types')
-                            return False
-                    elif sfield.name in self.opt_fields.keys():
-                        # OPT -> OPT, so check it's the same
-                        if self.opt_fields[sfield.name] != field:
-                            logging.debug('OPT field mismatch: %s != %s',
-                                          self.opt_fields[sfield.name], field)
-                            return False
-                    else:
-                        # new OPT field
-                        pass
-
-                elif sfield.is_required:
-                    if sfield.name in self.required_fields.keys():
-                        # never allow REQ -> REQ' changes
-                        if field != self.required_fields[sfield.name]:
-                            logging.debug('REQ field mismatch: %s != %s',
-                                          self.required_fields[sfield.name],
-                                          field)
-                            return False
-                    else:
-                        logging.debug('Cannot add REQ fields after ver 1.')
-                        return False
-                else:
-                    # shouldn't happen
-                    raise ValueError('WTF?  %s' % field)
-            except ValueError as verr:
-                logging.warn(verr)
-                return False
-        return True
-
-
-def basic_schema_dict_valid(sdict, mas=None):
-    '''Checks that a schema dict has the basic required elements.  If a MAS is
-    specified, ensure the name, namespace and type have not changed.'''
-    if not ('namespace' in sdict and 'type' in sdict and 'name' in sdict):
-        logging.debug('Missing non-field element(s).')
-        return False
-    if mas and mas.e_namespace and mas.e_namespace != sdict['namespace']:
-        logging.debug('namespace mismatch')
-        return False
-    if mas and mas.e_name and mas.e_name != sdict['name']:
-        logging.debug('name mismatch')
-        return False
-    if mas and mas.e_type and mas.e_type != sdict['type']:
-        logging.debug('type mismatch')
-        return False
-    if not ('fields' in sdict and isinstance(sdict['fields'], list)):
-        logging.debug('Does not have a fields element.')
-        return False
-    return True
-
-
-class SchemaField(dict):
-    def __init__(self, obj=None, allow_defaultless_opt=False):
-        super(SchemaField, self).__init__()
-        self.is_part = None
-        self.is_id = None
-        self.is_required = None
-        self.allow_defaultless_opt = allow_defaultless_opt
-        self.is_defaultless_opt = None
-        self.is_complex = None
-        self.is_map = None
-        self.name = None
-        self.type = None
-        self.opt_type = None
-        self.default = None
-        self.map_values = None
-        if obj:
-            self.set_all(obj)
-
-    def set_all(self, obj):
-        if obj and isinstance(obj, dict):
-            for k, v in obj.iteritems():
-                self[k] = v
-                if k.lower() == 'name':
-                    self.name = self[k]
-                if k.lower() == 'type':
-                    self.type = self[k]
-                if k.lower() == 'default':
-                    self.default = self[k]
-        if not self.name:
-            raise ValueError("must define a name")
-        if not self.type:
-            raise ValueError("must define a type (%s)" % self.name)
-        if isinstance(self.type, list):
-            # OPT fields
-            if not "null" in self.type:
-                if self.allow_defaultless_opt:
-                    self.is_defaultless_opt = True
-                else:
-                    raise ValueError("union without a null (%s)" % self.name)
-            if not "default" in self.keys():
-                raise ValueError("union with no default (%s)" % self.name)
-            if not self.default == None:
-                raise ValueError("union with bad default (%s)" % self.name)
-            if not len(self.type) == 2:
-                raise ValueError("bad OPT type: %s (%s)" % (self.type,
-                                                            self.name))
-            # we have a valid OPT field
-            self.is_required = False
-            for utype in self.type:
-                if not utype == "null":
-                    self.opt_type = utype
-                    break
-            if self.opt_type and (isinstance(self.opt_type, dict) or
-                                  isinstance(self.opt_type, list)):
-                self.is_complex = True
-            else:
-                self.is_complex = False
-        elif self.type == 'map':
-            # REQ map field
-            if not "values" in self.keys():
-                raise ValueError("map with no values (%s)" % self.name)
-            self.map_values = self["values"]
-            self.is_complex = False
-            self.is_required = True
-            self.is_map = True
+        i_list = self.incompatibilities(obj)
+        if i_list == None or len(i_list) == 0:
+            return True
         else:
-            # REQ field
-            self.is_complex = False
-            self.is_required = True
-            self.is_map = False
+            # TODO: better incompat logging
+            for i in i_list:
+                print i
+        return False

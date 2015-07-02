@@ -142,10 +142,9 @@ class TestTASR(TASRTestCase):
 
         # should have two versions of the gold schema now, so grab the latest
         latest_schema = self.asr.get_latest_schema_for_group(self.event_type)
-        latest_schema_str = latest_schema.canonical_schema_str
-        self.assertNotEqual(rs.canonical_schema_str, latest_schema_str,
+        self.assertNotEqual(rs.json, latest_schema.json,
                             u'Latest schema equal to earlier version')
-        self.assertEqual(rs2.canonical_schema_str, latest_schema_str,
+        self.assertEqual(rs2.json, latest_schema.json,
                          u'Latest schema unequal to later version')
 
     def test_reg_50_then_get_for_topic_and_version(self):

@@ -97,11 +97,16 @@ class TASRApp(bottle.Bottle):
         log_request(bottle.response.status_code)
         if callback_fn:
             # return a JSONP wrapped response
-            jbod = json_body(obj if json_obj == None else json_obj)
+            if json_obj == None:
+                jbod = json_body(obj)
+            else:
+                jbod = json_body(json_obj)
             return ("/**/typeof %s==='function' && %s(%s);" %
                     (callback_fn, callback_fn, jbod))
         elif is_json_type(rctype):
-            return json_body(obj if json_obj == None else json_obj)
+            if json_obj == None:
+                return json_body(obj)
+            return json_body(json_obj)
         elif not obj == None:
             # if we're not returning JSON and obj is not None, return as lines
             buff = StringIO.StringIO()
@@ -157,8 +162,7 @@ class TASRApp(bottle.Bottle):
         bottle.response.content_type = rctype
         bot = tasr.headers.SchemaHeaderBot(bottle.response, reg_schema)
         bot.standard_headers(subject_name=subject_name)
-        return self.object_response(reg_schema.canonical_schema_str,
-                                    reg_schema.ordered, rctype)
+        return self.object_response(reg_schema.json_obj, None, rctype)
 
 
 def log_request(code=200):

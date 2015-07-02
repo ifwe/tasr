@@ -42,11 +42,11 @@ class TestTASRLegacyClientObject(TestTASRAppClient):
         # schema string so we have an accurate target for comparison
         ras = tasr.registered_schema.RegisteredAvroSchema()
         ras.schema_str = schema_str
-        canonical_schema_str = ras.canonical_schema_str
+        canonical_schema_str = ras.json
         with httmock.HTTMock(self.route_to_testapp):
             client = tasr.client_legacy.TASRLegacyClient(self.host, self.port)
             rs = client.register_schema(self.event_type, schema_str)
-            self.assertEqual(canonical_schema_str, rs.schema_str,
+            self.assertEqual(canonical_schema_str, rs.json,
                              'Schema string modified!')
             self.assertIn(self.event_type, rs.group_names,
                           'Topic not in registered schema object.')
@@ -150,19 +150,18 @@ class TestTASRLegacyClientObject(TestTASRAppClient):
             # schema string so we have an accurate target for comparison
             ras = tasr.registered_schema.RegisteredAvroSchema()
             ras.schema_str = ver_schema_str
-            canonical_ver_schema_str = ras.canonical_schema_str
+            canonical_ver_schema_str = ras.json
             schemas.append(canonical_ver_schema_str)
             # reg with the non-canonicalized schema string
             rs = self.obj_register_schema_skeleton(ver_schema_str)
-            self.assertEqual(canonical_ver_schema_str, rs.schema_str,
+            self.assertEqual(canonical_ver_schema_str, rs.json,
                              'Schema string modified!')
             self.assertIn(self.event_type, rs.group_names,
                           'Topic not in registered schema object.')
         # now pull them by version and check they match what we sent originally
         for v in range(1, 50):
             rs = self.obj_get_for_topic_skeleton(self.event_type, v)
-            self.assertEqual(schemas[v - 1], rs.canonical_schema_str,
-                             'Unexpected version.')
+            self.assertEqual(schemas[v - 1], rs.json, 'Unexpected version.')
 
     def test_obj_reg_regmod_reg_then_get_ver_1(self):
         '''TASRLegacyClient.get_schema_for_topic() - non-sequential re-reg'''
@@ -177,7 +176,7 @@ class TestTASRLegacyClientObject(TestTASRAppClient):
         # now get version 1 -- should be same schema, and should list
         # requested version as "current"
         rs = self.obj_get_for_topic_skeleton(self.event_type, 1)
-        self.assertEqual(rs1.canonical_schema_str, rs.canonical_schema_str,
+        self.assertEqual(rs1.json, rs.json,
                          'Unexpected schema string change between v1 and v3.')
         self.assertEqual(1, rs.current_version(self.event_type),
                         'Expected different current version value.')

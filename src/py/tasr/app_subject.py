@@ -297,12 +297,11 @@ def all_subject_schemas(subject_name=None):
     tasr.app_wsgi.log_request(bottle.response.status_code)
 
     schema_list = []
-    jobj_list = []
+    #jobj_list = []
     for schema in asr.get_latest_schema_versions_for_group(subject_name, -1):
         hbot.add_subject_sha256_id_to_list(schema.sha256_id)
-        schema_list.append(schema.canonical_schema_str)
-        jobj_list.append(schema.ordered)
-    return TASR_SUBJECT_APP.object_response(schema_list, jobj_list)
+        schema_list.append(schema.json)
+    return TASR_SUBJECT_APP.object_response(schema_list, None)
 
 
 def recursive_master_schema(versions):
@@ -338,8 +337,7 @@ def subject_master_schema(subject_name=None):
     if depth < len(versions):
         # master based on an incomplete set of versions
         bottle.response.status = 409
-    return TASR_SUBJECT_APP.object_response(mas.canonical_schema_str,
-                                            mas.ordered,
+    return TASR_SUBJECT_APP.object_response(mas.json_obj, None,
                                             'application/json')
 
 

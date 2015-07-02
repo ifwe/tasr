@@ -21,7 +21,7 @@ class TestRegisteredAvroSchema(TASRTestCase):
         self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
         self.schema_str = self.avsc_file.read()
         self.schema_version = 0
-        self.expect_sha256_id = 'IEAsvOGuZfJFblDinapW428TgEn19HQX/AWBKzDeIzCR'
+        self.expect_sha256_id = 'IF6BQDbcR0qx/fTvbHNIFAgUbymwFs7RuM6zUvHwuYDI'
 
     def test_create(self):
         RegisteredAvroSchema()
@@ -132,10 +132,12 @@ class TestRegisteredAvroSchema(TASRTestCase):
         jd['fields'].append(non_nullable_field_dict)
         new_ras = RegisteredAvroSchema()
         new_ras.schema_str = json.dumps(jd)
-        self.assertTrue(MasterAvroSchema([new_ras, ]).is_compatible(ras),
-                        'expected schema to be back-compatible')
+        # starting with the REQ field is fine
+        mas = MasterAvroSchema([new_ras, ])
+        self.assertTrue(mas.is_compatible(ras), 'expected compatible w/ MAS')
         self.assertTrue(ras.back_compatible_with(new_ras),
-                        'expected schema to be back-compatible')
+                        'expected back-compatible')
+
         # make sure the reverse order fails
         self.assertFalse(MasterAvroSchema([ras, ]).is_compatible(new_ras),
                          'expected schema to NOT be back-compatible')
@@ -193,9 +195,9 @@ class TestRegisteredAvroSchema(TASRTestCase):
     def test_required_map_field_is_self_compatible(self):
         '''Check that schemas with a required map field type are compatible.'''
         jd = json.loads(self.schema_str)
-        req_map_field_dict = {"name": "extra",
-                          "type": "map",
-                          "values": "string"}
+        req_map_field_dict = {u"name": u"extra",
+                          u"type": {u"type": u"map",
+                          u"values": u"string"}}
         jd['fields'].append(req_map_field_dict)
         ras = RegisteredAvroSchema()
         ras.schema_str = json.dumps(jd)
@@ -208,10 +210,10 @@ class TestRegisteredAvroSchema(TASRTestCase):
     def test_nullable_map_values_field_is_self_compatible(self):
         '''Check that schemas with a required map field type are compatible.'''
         jd = json.loads(self.schema_str)
-        opt_values_map_field_dict = {"name": "extra",
-                          "type": "map",
-                          "values": ["null", "string"],
-                          "default": None}
+        opt_values_map_field_dict = {u"name": u"extra",
+                          u"type": {u"type": u"map",
+                          u"values": [u"null", u"string"],
+                          u"default": None}}
         jd['fields'].append(opt_values_map_field_dict)
         ras = RegisteredAvroSchema()
         ras.schema_str = json.dumps(jd)
@@ -224,14 +226,14 @@ class TestRegisteredAvroSchema(TASRTestCase):
     def test_nullable_map_field_is_self_compatible(self):
         '''Check that schemas with a required map field type are compatible.'''
         jd = json.loads(self.schema_str)
-        opt_map_field_dict = {"name": "extra",
-                              "type": ["null",
-                                       {"type": "map",
-                                        "default": None,
-                                        "values": ["null", "string"]
+        opt_map_field_dict = {u"name": u"extra",
+                              u"type": [u"null",
+                                       {u"type": u"map",
+                                        u"default": None,
+                                        u"values": [u"null", u"string"]
                                         }
                                        ],
-                              "default": None}
+                              u"default": None}
         jd['fields'].append(opt_map_field_dict)
         ras = RegisteredAvroSchema()
         ras.schema_str = json.dumps(jd)
@@ -240,32 +242,6 @@ class TestRegisteredAvroSchema(TASRTestCase):
         # and confirm that it works with the convenience method
         self.assertTrue(ras.back_compatible_with(ras),
                         'expected schema to be back-compatible with self')
-
-    def test_req_to_opt_map_field_is_compatible(self):
-        '''Check that schemas with a required map field type are compatible.'''
-        req_jd = json.loads(self.schema_str)
-        req_map_field_dict = {"name": "extra",
-                          "type": "map",
-                          "values": "string"}
-        req_jd['fields'].append(req_map_field_dict)
-        req_ras = RegisteredAvroSchema()
-        req_ras.schema_str = json.dumps(req_jd)
-
-        opt_jd = json.loads(self.schema_str)
-        opt_map_field_dict = {"name": "extra",
-                          "type": "map",
-                          "values": ["null", "string"],
-                          "default": None}
-        opt_jd['fields'].append(opt_map_field_dict)
-        opt_ras = RegisteredAvroSchema()
-        opt_ras.schema_str = json.dumps(opt_jd)
-
-        self.assertTrue(MasterAvroSchema([req_ras, ]).is_compatible(opt_ras),
-                        'expected schema to be back-compatible with self')
-        # and confirm that it works with the convenience method
-        self.assertTrue(opt_ras.back_compatible_with(req_ras),
-                        'expected schema to be back-compatible with self')
-
 
 if __name__ == "__main__":
     LOADER = unittest.TestLoader()
