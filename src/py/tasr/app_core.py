@@ -7,7 +7,6 @@ The endpoints beginning with /id, /schema and /list are defined here.  These
 are meant to be mounted by an umbrella instance of TASRApp.  This
 
 '''
-import avro.schema
 import bottle
 import tasr.app_wsgi
 from tasr.registered_schema import MasterAvroSchema

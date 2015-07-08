@@ -409,10 +409,21 @@ class RegisteredAvroSchema(RegisteredSchema):
 
     @property
     def json_obj(self):
+        '''We want a JSON representation that keeps the defaults and other
+        elements stripped from the PCF, but normalizes the key order to make
+        comparisons and other processing easier.'''
         if not self.schema_str:
             return None
         if not self._json_obj:
-            self._json_obj = ordered_json_obj(str(self.schema))
+            self._json_obj = collections.OrderedDict()
+            self._json_obj["name"] = self.schema.fullname
+            #self._json_obj["namespace"] = self.schema.namespace
+            self._json_obj["type"] = self.schema.type
+
+            # use a JSON object as an intermediary to order the field keys
+            jo = json.loads(str(self.schema))
+            fields = ordered_json_obj(json.dumps(jo["fields"], sort_keys=True))
+            self._json_obj["fields"] = fields
         return self._json_obj
 
     @property
