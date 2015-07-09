@@ -416,8 +416,8 @@ class RegisteredAvroSchema(RegisteredSchema):
             return None
         if not self._json_obj:
             self._json_obj = collections.OrderedDict()
-            self._json_obj["name"] = self.schema.fullname
-            #self._json_obj["namespace"] = self.schema.namespace
+            self._json_obj["name"] = self.schema.name
+            self._json_obj["namespace"] = self.schema.namespace
             self._json_obj["type"] = self.schema.type
 
             # use a JSON object as an intermediary to order the field keys
@@ -536,11 +536,13 @@ class MasterAvroSchema(RegisteredAvroSchema):
         if not self.schema_list or len(self.schema_list) == 0:
             return None
         m_name = None
+        m_namespace = None
         m_type = None
         m_fields = dict()
         for sv in self.schema_list:
             # name and type should not change between versions
-            m_name = sv.fullname
+            m_name = sv.name
+            m_namespace = sv.namespace
             m_type = sv.type
             for svf in sv.fields:
                 m_fields[svf.name] = svf
@@ -553,14 +555,15 @@ class MasterAvroSchema(RegisteredAvroSchema):
         env[m_name] = u'"%s"' % m_name
 
         first_elem = True
-        mss = u'{"name":"%s","type":"%s","fields":[' % (m_name, m_type)
+        mss = (u'{"name":"%s","namespace":"%s","type":"%s","fields":[' %
+               (m_name, m_namespace, m_type))
         for mfname, mf in om_fields.iteritems():
             if first_elem:
                 first_elem = False
             else:
                 mss += u','
             if mf.type.type == u'union':
-                mss += u'{"name":"%s","default":null,' % mfname
+                mss += u'{"default":null,"name":"%s",' % mfname
             else:
                 mss += u'{"name":"%s",' % mfname
             mss += '"type":%s}' % build_pcf(env, mf.type)
@@ -667,7 +670,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
     def incompatibilities(self, ras):
         i_list = []
         master = avro.schema.parse(self.master_schema_string)
-        if master.name != ras.schema.fullname:
+        if master.fullname != ras.schema.fullname:
             i_list.append("Name or namespace change.")
         if master.type != ras.schema.type:
             i_list.append("Top-level type change.")
