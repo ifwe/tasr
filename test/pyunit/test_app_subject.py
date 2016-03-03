@@ -885,8 +885,84 @@ class TestTASRSubjectApp(TASRTestCase):
             # reset expose_force_register to its original value
             APP.config.config.set(mode, 'expose_force_register', orig_val)
 
+    def test_schema_anchoring(self):
+        '''GET /tasr/subject/<subject>/master - as expected
+        ---------------------------------------------------
+        The idea here is to register an incompatible schema first, then force-
+        register a good version and mark it as the anchor.  Then register
+        additional compatible versions without forcing.  Lastly, getting a
+        master should return a 200, not a 409.
+        '''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_force_register')
+        APP.config.config.set(mode, 'expose_force_register', 'True')
+        try:
+            # first add a version that will not be compatible
+            targ = '{"name": "source__timestamp", "type": "long"}'
+            replacement = '{"name": "source__timestamp", "type": "int"}'
+            incompat_schema_str = self.schema_str.replace(targ, replacement, 1)
+            resp = self.register_schema(self.event_type, incompat_schema_str)
+            self.abort_diff_status(resp, 201)
+
+            # now force-register the (incompatible) base schema
+            schemas = []
+            reg_url = '%s/force_register' % self.subject_url
+            resp1 = self.tasr_app.request(reg_url, method='PUT',
+                                          content_type=self.content_type,
+                                          expect_errors=False,
+                                          body=self.schema_str)
+            self.abort_diff_status(resp1, 201)
+            schemas.append(resp1.body)
+
+            # now mark the base schema as the anchor version
+            meta = SchemaHeaderBot.extract_metadata(resp1)
+            anchor_id = meta.sha256_id
+            reg_url = '%s/anchor_id/%s' % (self.subject_url, anchor_id)
+            resp2 = self.tasr_app.request(reg_url, method='PUT',
+                                          content_type=self.content_type,
+                                          expect_errors=False,
+                                          body=None)
+            self.abort_diff_status(resp2, 201)
+
+            # now add some compatible schema versions
+            for v in range(1, 4):
+                ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                             "fn_%s" % v)
+                resp3 = self.register_schema(self.event_type, ver_schema_str)
+                self.abort_diff_status(resp3, 201)
+                # schema str with canonicalized whitespace returned
+                canonicalized_schema_str = resp3.body
+                schemas.append(canonicalized_schema_str)
+
+            # grab the master and check that all the expected fields are there
+            reg_url = '%s/master' % self.subject_url
+            resp4 = self.tasr_app.request(reg_url, method='GET',
+                                          content_type=self.content_type,
+                                          expect_errors=False,
+                                          body=None)
+            self.abort_diff_status(resp4, 200)
+            master_fnames = []
+            for mfield in json.loads(resp4.body)['fields']:
+                master_fnames.append(mfield['name'])
+            # check the original fields
+            for ofield in json.loads(self.schema_str)['fields']:
+                if not ofield['name'] in master_fnames:
+                    self.fail('missing original field %s' % ofield['name'])
+            # now check all of the extra fields from the version permutations
+            for v in range(1, 4):
+                fname = "fn_%s" % v
+                if not fname in master_fnames:
+                    self.fail('missing field %s' % fname)
+        finally:
+            # reset expose_force_register to its original value
+            APP.config.config.set(mode, 'expose_force_register', orig_val)
+
     def test_hdfs_master_schema_for_subject(self):
-        '''GET /tasr/subject/<subject>/master - as expected, check hdfs'''
+        '''GET /tasr/subject/<subject>/master - as expected, check hdfs
+        ---------------------------------------------------------------
+        NOTE: This test requires a reachable HDFS -- usually running in a local
+        VM.  If that isn't available, this test will FAIL.
+        '''
         mode = APP.config.mode
         orig_val = APP.config.config.get(mode, 'push_masters_to_hdfs')
         APP.config.config.set(mode, 'push_masters_to_hdfs', 'True')

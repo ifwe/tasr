@@ -14,6 +14,7 @@ from test_client_legacy_object import TestTASRLegacyClientObject
 from test_client_methods import TestTASRClientMethods
 from test_client_object import TestTASRClientObject
 from test_registered_schema import TestRegisteredAvroSchema
+from test_redshift import TestTASRRedshift
 
 
 if __name__ == "__main__":
@@ -26,4 +27,5 @@ if __name__ == "__main__":
     SUITE = TestLoader().loadTestsFromTestCase(TestTASRLegacyClientMethods)
     SUITE = TestLoader().loadTestsFromTestCase(TestTASRLegacyClientObject)
     SUITE = TestLoader().loadTestsFromTestCase(TestRegisteredAvroSchema)
+    SUITE = TestLoader().loadTestsFromTestCase(TestTASRRedshift)
     TextTestRunner(verbosity=2).run(SUITE)

@@ -21,6 +21,7 @@ import tasr.app_wsgi
 import tasr.group
 import tasr.headers
 import tasr.registered_schema
+import tasr.redshift
 
 
 ##############################################################################
@@ -244,6 +245,59 @@ def delete_subject_config_entry(subject_name=None, key=None):
     return TASR_SUBJECT_APP.subject_config_response(subject)
 
 
+@TASR_SUBJECT_APP.put('/<subject_name>/anchor_id/<id_str:path>')
+def set_subject_anchor_version(subject_name=None, id_str=None):
+    '''Sets the specified ID string as the 'anchor' version for the subject.
+    The anchor version, if set, is considered the starting version for purposes
+    of compatibility.  All endpoints that consider multiple versions will
+    ignore any versions prior to the anchor, if set.  Specifically, the:
+    all_ids, all_schemas, master, and all redshift/* endpoints
+    WILL NOT CONSIDER PRE-ANCHOR VERSIONS.
+
+    Note this is group metadata, but not considered part of the config.  The
+    reason is that an anchor version should really be out of sight in casual
+    use.  If we set an anchor version, the rest of TASR should behave as if the
+    pre-anchor versions are just not there.
+    '''
+    abort_if_subject_bad(subject_name)
+    abort_if_value_bad(id_str, 'multi-type ID string')
+    asr = TASR_SUBJECT_APP.ASR
+
+    id_list = []
+    for sha256_id in asr.get_all_version_sha256_ids_for_group(subject_name):
+        id_list.append(sha256_id[3:])
+    if not id_str in id_list:
+        TASR_SUBJECT_APP.abort(404, 'No %s version with ID %s' %
+                               (subject_name, id_str))
+
+    # version is real, set the 'anchor' metadata value to the version ID
+    asr.set_group_metadata_entry(subject_name, 'anchor', id_str)
+
+    # return the anchor schema
+    idx = id_list.index(id_str)
+    aschema = asr.get_schema_for_group_and_version(subject_name, idx)
+    bottle.response.status = 201
+    return TASR_SUBJECT_APP.schema_response(aschema, subject_name)
+
+
+@TASR_SUBJECT_APP.get('/<subject_name>/anchor_id')
+def get_subject_anchor_version(subject_name=None):
+    '''Returns an anchor version SHA ID if one has been set.  If no anchor
+    version has been set, a 404 is returned.'''
+    abort_if_subject_bad(subject_name)
+    smd = TASR_SUBJECT_APP.ASR.get_group_metadata(subject_name)
+    if not 'anchor' in smd:
+        TASR_SUBJECT_APP.abort(404, 'No anchor set for %s.' % subject_name)
+    return smd['anchor']
+
+
+@TASR_SUBJECT_APP.delete('/<subject_name>/anchor_id')
+def unset_subject_anchor_version(subject_name=None):
+    '''Deletes the 'anchor' group metadata entry along with any set value.'''
+    abort_if_subject_bad(subject_name)
+    TASR_SUBJECT_APP.ASR.delete_group_metadata_entry(subject_name, 'anchor')
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/integral')
 def subject_integral(subject_name=None):
     '''
@@ -297,11 +351,29 @@ def all_subject_schemas(subject_name=None):
     tasr.app_wsgi.log_request(bottle.response.status_code)
 
     schema_list = []
-    #jobj_list = []
     for schema in asr.get_latest_schema_versions_for_group(subject_name, -1):
         hbot.add_subject_sha256_id_to_list(schema.sha256_id)
         schema_list.append(schema.json)
     return TASR_SUBJECT_APP.object_response(schema_list, None)
+
+
+def get_anchored_version_list(subject_name):
+    asr = TASR_SUBJECT_APP.ASR
+    olds = asr.get_latest_schema_versions_for_group(subject_name, -1)
+    # if the group has an anchor version set, ignore prior versions
+    smd = TASR_SUBJECT_APP.ASR.get_group_metadata(subject_name)
+    if 'anchor' in smd:
+        anchor_version = smd['anchor']
+        anchored = False
+        anchored_olds = []
+        for ver in olds:
+            if ver.sha256_id == anchor_version:
+                anchored_olds.append(ver)
+                anchored = True
+            elif anchored:
+                anchored_olds.append(ver)
+        olds = anchored_olds
+    return olds
 
 
 def recursive_master_schema(versions):
@@ -325,10 +397,10 @@ def subject_master_schema(subject_name=None):
     build the Hive tables that cover all the versions.
 
     Note that if the versions are incompatible, the master will be composed
-    from the most recent compatible versions.'''
+    from the most recent compatible versions.  If there is an anchor version
+    set, the master will include versions from the anchor forward.'''
     abort_if_subject_bad(subject_name)
-    asr = TASR_SUBJECT_APP.ASR
-    versions = asr.get_latest_schema_versions_for_group(subject_name, -1)
+    versions = get_anchored_version_list(subject_name)
     if not versions or len(versions) == 0:
         TASR_SUBJECT_APP.abort(404, ('No versions registered for %s.'
                                      % subject_name))
@@ -341,16 +413,35 @@ def subject_master_schema(subject_name=None):
                                             'application/json')
 
 
+@TASR_SUBJECT_APP.get('/<subject_name>/redshift/master')
+def subject_redshift_master_schema(subject_name=None):
+    '''Get the RedShift-compatible version of the master subject schema.  The
+    RedShift version strips the event type prefix from the event-specific
+    fields.  It also converts the kvpairs map into a json string field and
+    removes any other complex types (e.g. -- meta__handlers).  The namespace
+    shifts to tagged.events.redshift.
+    '''
+    abort_if_subject_bad(subject_name)
+    versions = get_anchored_version_list(subject_name)
+    app = TASR_SUBJECT_APP
+    if not versions or len(versions) == 0:
+        app.abort(404, ('No versions registered for %s.' % subject_name))
+    rs_mas = tasr.redshift.RedshiftMasterAvroSchema(versions)
+    return app.object_response(rs_mas.rs_json_obj(), None, 'application/json')
+
+
 def is_back_compatible(subject_name, schema_str):
     '''A convenience method that checks whether a given schema string is back
-    compatible with all the previously registered schema versions.  This is
-    used whenever we are considering registering a new schema version.'''
+    compatible with all the previously registered schema versions (or those
+    after the anchor version if one has been set).  This is used whenever we
+    are considering registering a new schema version.'''
     asr = TASR_SUBJECT_APP.ASR
     # instantiate a RAS object with the passed schema string
     unreg_schema = asr.instantiate_registered_schema()
     unreg_schema.schema_str = schema_str
-    # now grab all the previous schemas up to the latest
-    olds = asr.get_latest_schema_versions_for_group(subject_name, -1)
+    # now grab all the previous schemas from anchor up to the latest
+    olds = get_anchored_version_list(subject_name)
+
     # check that the new schema will be back-compatible -- note that by using
     # the MAS, we are allowing exceptions to bubble up.  This is to allow more
     # informative, field-specific errors to make it to the response.
