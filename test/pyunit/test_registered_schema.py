@@ -21,7 +21,7 @@ class TestRegisteredAvroSchema(TASRTestCase):
         self.avsc_file = TASRTestCase.get_fixture_file(fix_rel_path, "r")
         self.schema_str = self.avsc_file.read()
         self.schema_version = 0
-        self.expect_sha256_id = 'IF6BQDbcR0qx/fTvbHNIFAgUbymwFs7RuM6zUvHwuYDI'
+        self.expect_sha256_id = 'IORdbj60Bk6szV/YF3aC+YtfRv30LLDqVo+qnxNbZrYS'
 
     def test_create(self):
         RegisteredAvroSchema()

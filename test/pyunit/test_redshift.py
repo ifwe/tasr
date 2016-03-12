@@ -82,8 +82,9 @@ class TestTASRRedshift(TASRTestCase):
             rsm_fnames.append(mfield['name'])
 
         prefix = '%s__' % self.event_type
+        master_only = ['meta__handlers', 'meta__kvpairs', 'meta__topic_name']
         for mfn in master_fnames:
-            if mfn in ('meta__handlers', 'meta__kvpairs', 'meta__topic_name'):
+            if mfn in master_only:
                 continue
             if prefix in mfn:
                 rs_name = mfn[len(prefix):]
@@ -92,13 +93,33 @@ class TestTASRRedshift(TASRTestCase):
             elif not mfn in rsm_fnames:
                 self.fail('master field "%s" missing in RS master' % mfn)
 
+        rs_only = ['meta__kvpairs_json', 'dt', 'redshift__event_md5_hash']
         for rsmfn in rsm_fnames:
-            if rsmfn in ('meta__kvpairs_json', 'dt'):
+            if rsmfn in rs_only:
                 continue
             if not rsmfn in master_fnames:
                 prefixed_name = '%s%s' % (prefix, rsmfn)
                 if not prefixed_name in master_fnames:
                     self.fail('RS field "%s" missing in master' % rsmfn)
+
+    def test_redshift_create_dml_for_subject(self):
+        '''GET /tasr/subject/<subject>/redshift/dml_create - as expected'''
+        schemas = []
+        # add a bunch of versions for our subject
+        for v in range(1, 4):
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
+            resp = self.register_schema(self.event_type, ver_schema_str)
+            self.abort_diff_status(resp, 201)
+            # schema str with canonicalized whitespace returned
+            canonicalized_schema_str = resp.body
+            schemas.append(canonicalized_schema_str)
+
+        # grab the master and check that all the expected fields are there
+        m_resp = self.tasr_app.get('%s/redshift/dml_create' % self.subject_url)
+        self.abort_diff_status(m_resp, 200)
+        rs_dml = m_resp.body
+        print rs_dml
 
 if __name__ == "__main__":
     SUITE = unittest.TestLoader().loadTestsFromTestCase(TestTASRRedshift)

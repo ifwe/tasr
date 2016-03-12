@@ -413,6 +413,14 @@ def subject_master_schema(subject_name=None):
                                             'application/json')
 
 
+def get_redshift_master(subject_name):
+    subject = get_subject(subject_name)
+    versions = get_anchored_version_list(subject.name)
+    if not versions or len(versions) == 0:
+        TASR_SUBJECT_APP.abort(404, ('No versions for %s.' % subject.name))
+    return tasr.redshift.RedshiftMasterAvroSchema(versions)
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/redshift/master')
 def subject_redshift_master_schema(subject_name=None):
     '''Get the RedShift-compatible version of the master subject schema.  The
@@ -421,13 +429,24 @@ def subject_redshift_master_schema(subject_name=None):
     removes any other complex types (e.g. -- meta__handlers).  The namespace
     shifts to tagged.events.redshift.
     '''
-    abort_if_subject_bad(subject_name)
-    versions = get_anchored_version_list(subject_name)
-    app = TASR_SUBJECT_APP
-    if not versions or len(versions) == 0:
-        app.abort(404, ('No versions registered for %s.' % subject_name))
-    rs_mas = tasr.redshift.RedshiftMasterAvroSchema(versions)
-    return app.object_response(rs_mas.rs_json_obj(), None, 'application/json')
+    subject = get_subject(subject_name)
+    rs_mas = get_redshift_master(subject.name)
+    return TASR_SUBJECT_APP.object_response(rs_mas.rs_json_obj(subject),
+                                            None, 'application/json')
+
+
+@TASR_SUBJECT_APP.get('/<subject_name>/redshift/dml_create')
+def subject_redshift_dml_create(subject_name=None):
+    '''Get the RedShift-compatible version of the master subject schema.  The
+    RedShift version strips the event type prefix from the event-specific
+    fields.  It also converts the kvpairs map into a json string field and
+    removes any other complex types (e.g. -- meta__handlers).  The namespace
+    shifts to tagged.events.redshift.
+    '''
+    subject = get_subject(subject_name)
+    rs_mas = get_redshift_master(subject.name)
+    return TASR_SUBJECT_APP.object_response(rs_mas.rs_dml_create(subject),
+                                            None, 'text/plain')
 
 
 def is_back_compatible(subject_name, schema_str):
