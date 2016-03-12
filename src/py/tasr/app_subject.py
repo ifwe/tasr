@@ -421,6 +421,14 @@ def get_redshift_master(subject_name):
     return tasr.redshift.RedshiftMasterAvroSchema(versions)
 
 
+def is_redshift_enabled(subject):
+    enabled = False
+    if 'redshift.enabled' in subject.config:
+        val = subject.config['redshift.enabled'].lower()[:1]
+        enabled = (val == 't' or val == 'y')
+    return enabled
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/redshift/master')
 def subject_redshift_master_schema(subject_name=None):
     '''Get the RedShift-compatible version of the master subject schema.  The
@@ -430,6 +438,9 @@ def subject_redshift_master_schema(subject_name=None):
     shifts to tagged.events.redshift.
     '''
     subject = get_subject(subject_name)
+    if not is_redshift_enabled(subject):
+        TASR_SUBJECT_APP.abort(404, ('RedShift not enabled for %s.' %
+                                     subject.name))
     rs_mas = get_redshift_master(subject.name)
     return TASR_SUBJECT_APP.object_response(rs_mas.rs_json_obj(subject),
                                             None, 'application/json')
@@ -444,6 +455,9 @@ def subject_redshift_dml_create(subject_name=None):
     shifts to tagged.events.redshift.
     '''
     subject = get_subject(subject_name)
+    if not is_redshift_enabled(subject):
+        TASR_SUBJECT_APP.abort(404, ('RedShift not enabled for %s.' %
+                                     subject.name))
     rs_mas = get_redshift_master(subject.name)
     return TASR_SUBJECT_APP.object_response(rs_mas.rs_dml_create(subject),
                                             None, 'text/plain')

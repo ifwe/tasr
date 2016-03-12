@@ -43,6 +43,11 @@ class TestTASRRedshift(TASRTestCase):
         url = '%s/subject/%s' % (self.url_prefix, subject_name)
         return self.tasr_app.put(url, {'subject_name': subject_name})
 
+    def enable_redshift_for_subject(self, subject_name):
+        url = '%s/subject/%s/config/redshift.enabled' % (self.url_prefix,
+                                                         subject_name)
+        return self.tasr_app.post(url, 'true')
+
     def register_schema(self, subject_name, schema_str, expect_errors=False):
         reg_url = '%s/subject/%s/register' % (self.url_prefix, subject_name)
         return self.tasr_app.request(reg_url, method='PUT',
@@ -52,6 +57,8 @@ class TestTASRRedshift(TASRTestCase):
 
     def test_redshift_master_schema_for_subject(self):
         '''GET /tasr/subject/<subject>/redshift/master - as expected'''
+        self.register_subject(self.event_type)
+        self.enable_redshift_for_subject(self.event_type)
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 4):
@@ -71,6 +78,7 @@ class TestTASRRedshift(TASRTestCase):
         # now grab the RedShift master to compare
         rs_resp = self.tasr_app.get('%s/redshift/master' % self.subject_url)
         self.abort_diff_status(rs_resp, 200)
+        print rs_resp.body
         rsm_json = json.loads(rs_resp.body)
 
         # field order should be (mostly) the same
@@ -104,6 +112,8 @@ class TestTASRRedshift(TASRTestCase):
 
     def test_redshift_create_dml_for_subject(self):
         '''GET /tasr/subject/<subject>/redshift/dml_create - as expected'''
+        self.register_subject(self.event_type)
+        self.enable_redshift_for_subject(self.event_type)
         schemas = []
         # add a bunch of versions for our subject
         for v in range(1, 4):

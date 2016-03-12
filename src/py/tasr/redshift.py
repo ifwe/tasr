@@ -93,13 +93,20 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
 
     def get_name_to_field_map(self, group):
         # preserve the field order from the master schema
+        g_name = group.name
+        if 's_' in g_name:
+            g_name = g_name[2:]
+
         nf_map = collections.OrderedDict()
         for msf in self.get_master_schema().fields:
             rs_field_name = msf.name
+            # clip the 's_' first if present
+            if 's_' in rs_field_name:
+                rs_field_name = rs_field_name[2:]
             if '__' in msf.name:
                 prefix = msf.name[:(msf.name.index('__') + 2)]
                 if not prefix in ('source__', 'meta__'):
-                    if prefix[:-2] == group.name:
+                    if prefix[:-2] == g_name:
                         rs_field_name = msf.name[len(prefix):]
             nf_map[rs_field_name] = msf
         return nf_map
