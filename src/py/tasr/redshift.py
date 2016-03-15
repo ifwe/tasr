@@ -244,4 +244,3 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             create_statement += 'compound sortkey(%s)' % ss
         create_statement += ';'
         return create_statement
-

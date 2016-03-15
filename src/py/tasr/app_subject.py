@@ -21,7 +21,6 @@ import tasr.app_wsgi
 import tasr.group
 import tasr.headers
 import tasr.registered_schema
-import tasr.redshift
 
 
 ##############################################################################
@@ -411,56 +410,6 @@ def subject_master_schema(subject_name=None):
         bottle.response.status = 409
     return TASR_SUBJECT_APP.object_response(mas.json_obj, None,
                                             'application/json')
-
-
-def get_redshift_master(subject_name):
-    subject = get_subject(subject_name)
-    versions = get_anchored_version_list(subject.name)
-    if not versions or len(versions) == 0:
-        TASR_SUBJECT_APP.abort(404, ('No versions for %s.' % subject.name))
-    return tasr.redshift.RedshiftMasterAvroSchema(versions)
-
-
-def is_redshift_enabled(subject):
-    enabled = False
-    if 'redshift.enabled' in subject.config:
-        val = subject.config['redshift.enabled'].lower()[:1]
-        enabled = (val == 't' or val == 'y')
-    return enabled
-
-
-@TASR_SUBJECT_APP.get('/<subject_name>/redshift/master')
-def subject_redshift_master_schema(subject_name=None):
-    '''Get the RedShift-compatible version of the master subject schema.  The
-    RedShift version strips the event type prefix from the event-specific
-    fields.  It also converts the kvpairs map into a json string field and
-    removes any other complex types (e.g. -- meta__handlers).  The namespace
-    shifts to tagged.events.redshift.
-    '''
-    subject = get_subject(subject_name)
-    if not is_redshift_enabled(subject):
-        TASR_SUBJECT_APP.abort(404, ('RedShift not enabled for %s.' %
-                                     subject.name))
-    rs_mas = get_redshift_master(subject.name)
-    return TASR_SUBJECT_APP.object_response(rs_mas.rs_json_obj(subject),
-                                            None, 'application/json')
-
-
-@TASR_SUBJECT_APP.get('/<subject_name>/redshift/dml_create')
-def subject_redshift_dml_create(subject_name=None):
-    '''Get the RedShift-compatible version of the master subject schema.  The
-    RedShift version strips the event type prefix from the event-specific
-    fields.  It also converts the kvpairs map into a json string field and
-    removes any other complex types (e.g. -- meta__handlers).  The namespace
-    shifts to tagged.events.redshift.
-    '''
-    subject = get_subject(subject_name)
-    if not is_redshift_enabled(subject):
-        TASR_SUBJECT_APP.abort(404, ('RedShift not enabled for %s.' %
-                                     subject.name))
-    rs_mas = get_redshift_master(subject.name)
-    return TASR_SUBJECT_APP.object_response(rs_mas.rs_dml_create(subject),
-                                            None, 'text/plain')
 
 
 def is_back_compatible(subject_name, schema_str):
