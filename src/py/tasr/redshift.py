@@ -174,10 +174,34 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         mss += u']}'
         return mss
 
+    def rs_dml_alter(self, group, old_fields=None):
+        create = self.rs_dml_create(group)
+        if not old_fields:
+            return create
+
+        g_name = group.name
+        if 's_' in g_name:
+            g_name = g_name[2:]
+
+        colstr = create[(create.index('(') + 1):create.index(')distkey')]
+        cols = colstr.split(',')
+        rval = ''
+        for col in cols:
+            if not col.split()[0] in old_fields:
+                if len(rval) > 0:
+                    rval += '\n'
+                rval += ('ALTER TABLE ramblas.%s_event ADD COLUMN %s' %
+                         (g_name, col))
+        return rval
+
     def rs_dml_create(self, group):
         '''This generates the CREATE TABLE DML statement that can be run in
         RedShift to create the table for the group based on the most current
         RedShift-specific master schema.'''
+
+        g_name = group.name
+        if 's_' in g_name:
+            g_name = g_name[2:]
 
         sec_ts_fields = []
         if 'redshift.sec_timestamp_fields' in group.config:
@@ -205,7 +229,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         rs_master_json = self.rs_master_schema_string(group)
         rs_master_schema = avro.schema.parse(rs_master_json)
         sort = []
-        create_statement = u'CREATE TABLE %s_event(' % group.name
+        create_statement = u'CREATE TABLE ramblas.%s_event(' % g_name
         skip_comma = True
         for field in rs_master_schema.fields:
             if skip_comma:

@@ -12,7 +12,10 @@ are included in lists of "all" subjects, but are excluded from lists of
 "active" subjects.
 '''
 from tasr.app_core import TASR_COLLECTION_APP, subject_list_response
-from tasr.app_subject import get_subject, get_anchored_version_list
+from tasr.app_wsgi import is_json_type
+from tasr.app_subject import (get_subject, get_anchored_version_list)
+import bottle
+import json
 import tasr.redshift
 
 
@@ -79,4 +82,34 @@ def subject_redshift_dml_create(subject_name=None):
                                       subject.name))
     rs_mas = get_redshift_master(subject.name)
     return TASR_REDSHIFT_APP.object_response(rs_mas.rs_dml_create(subject),
+                                             None, 'text/plain')
+
+
+@TASR_REDSHIFT_APP.post('/<subject_name>/redshift/dml_alter')
+def subject_redshift_dml_alter(subject_name=None):
+    subject = get_subject(subject_name)
+    if not is_redshift_enabled(subject):
+        TASR_REDSHIFT_APP.abort(404, ('RedShift not enabled for %s.' %
+                                      subject.name))
+    old = None
+    bod = bottle.request.body.getvalue()
+    if not bod or bod == None or len(bod) == 0:
+        old = []
+    else:
+        rctype = bottle.request.content_type
+        if is_json_type(rctype):
+            # if JSON was passed, try to extract the array of field names
+            try:
+                jbod = json.loads(bod)
+                if isinstance(jbod, list):
+                    old = jbod
+            except:
+                pass
+        if old == None:
+            # not JSON or bad JSON, so try processing bod as a whitespace
+            # delimited field name sequence
+            old = bod.split()
+
+    rs_mas = get_redshift_master(subject.name)
+    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_dml_alter(subject, old),
                                              None, 'text/plain')
