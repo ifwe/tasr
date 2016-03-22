@@ -247,10 +247,11 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                 dml_type = self.rs_dml_type_string(field)
                 if dml_type:
                     create_statement += u'%s %s' % (field.name, dml_type)
-                    if field.name in string_4k_fields:
-                        create_statement += u'(4096)'
-                    elif field.name in string_64k_fields:
-                        create_statement += u'(65535)'
+                    if dml_type == 'varchar':
+                        if field.name in string_4k_fields:
+                            create_statement += u'(4096)'
+                        elif field.name in string_64k_fields:
+                            create_statement += u'(65535)'
                 else:
                     skip_comma = True
         create_statement += ')'
