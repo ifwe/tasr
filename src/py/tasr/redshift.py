@@ -217,6 +217,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             string_4k_fields = group.config['redshift.64k_string_fields']
 
         # figure user ID field to use as distkey
+        uid_confirmed = False
         uid = 'user_id'
         if 'segmentation.user_id' in group.config:
             uid = group.config['segmentation.user_id']
@@ -232,6 +233,8 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         create_statement = u'CREATE TABLE ramblas.%s_event(' % g_name
         skip_comma = True
         for field in rs_master_schema.fields:
+            if field.name == uid:
+                uid_confirmed = True
             if skip_comma:
                 skip_comma = False
             else:
@@ -255,7 +258,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                 else:
                     skip_comma = True
         create_statement += ')'
-        if uid:
+        if uid and uid_confirmed:
             create_statement += 'distkey(%s)' % uid
         if len(sort) > 0:
             ss = ''
