@@ -55,7 +55,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             if not complex_union:
                 return '["null", "%s"]' % non_null_type
 
-    def rs_dml_type_string(self, field):
+    def rs_ddl_type_string(self, field):
         if field.name == 'meta__kvpairs':
             # special case for kvpairs
             return u'varchar(4096)'
@@ -174,8 +174,8 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         mss += u']}'
         return mss
 
-    def rs_dml_alter(self, group, old_fields=None):
-        create = self.rs_dml_create(group)
+    def rs_ddl_alter(self, group, old_fields=None):
+        create = self.rs_ddl_create(group)
         if not old_fields:
             return create
 
@@ -194,8 +194,8 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                          (g_name, col))
         return rval
 
-    def rs_dml_create(self, group):
-        '''This generates the CREATE TABLE DML statement that can be run in
+    def rs_ddl_create(self, group):
+        '''This generates the CREATE TABLE DDL statement that can be run in
         RedShift to create the table for the group based on the most current
         RedShift-specific master schema.'''
 
@@ -247,10 +247,10 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             if field.name in sec_ts_fields or field.name in ms_ts_fields:
                 create_statement += u'%s timestamp' % field.name
             else:
-                dml_type = self.rs_dml_type_string(field)
-                if dml_type:
-                    create_statement += u'%s %s' % (field.name, dml_type)
-                    if dml_type == 'varchar':
+                ddl_type = self.rs_ddl_type_string(field)
+                if ddl_type:
+                    create_statement += u'%s %s' % (field.name, ddl_type)
+                    if ddl_type == 'varchar':
                         if field.name in string_4k_fields:
                             create_statement += u'(4096)'
                         elif field.name in string_64k_fields:

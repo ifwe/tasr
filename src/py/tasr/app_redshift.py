@@ -86,7 +86,7 @@ def subject_redshift_ddl_create(subject_name=None):
         TASR_REDSHIFT_APP.abort(404, ('RedShift not enabled for %s.' %
                                       subject.name))
     rs_mas = get_redshift_master(subject.name)
-    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_dml_create(subject),
+    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_ddl_create(subject),
                                              None, 'text/plain')
 
 
@@ -121,5 +121,5 @@ def subject_redshift_ddl_alter(subject_name=None):
             old = bod.split()
 
     rs_mas = get_redshift_master(subject.name)
-    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_dml_alter(subject, old),
+    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_ddl_alter(subject, old),
                                              None, 'text/plain')
