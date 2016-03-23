@@ -70,6 +70,11 @@ def subject_redshift_master_schema(subject_name=None):
 
 @TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_create')
 def subject_redshift_dml_create(subject_name=None):
+    return subject_redshift_ddl_create(subject_name)
+
+
+@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/ddl_create')
+def subject_redshift_ddl_create(subject_name=None):
     '''Get the RedShift-compatible version of the master subject schema.  The
     RedShift version strips the event type prefix from the event-specific
     fields.  It also converts the kvpairs map into a json string field and
@@ -87,6 +92,11 @@ def subject_redshift_dml_create(subject_name=None):
 
 @TASR_REDSHIFT_APP.post('/<subject_name>/redshift/dml_alter')
 def subject_redshift_dml_alter(subject_name=None):
+    return subject_redshift_ddl_alter(subject_name)
+
+
+@TASR_REDSHIFT_APP.post('/<subject_name>/redshift/ddl_alter')
+def subject_redshift_ddl_alter(subject_name=None):
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         TASR_REDSHIFT_APP.abort(404, ('RedShift not enabled for %s.' %
