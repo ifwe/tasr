@@ -183,7 +183,13 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         if 's_' in g_name:
             g_name = g_name[2:]
 
-        colstr = create[(create.index('(') + 1):create.index(')distkey')]
+        colstr = None
+        if ')distkey' in create:
+            colstr = create[(create.index('(') + 1):create.index(')distkey')]
+        elif ')compound' in create:
+            colstr = create[(create.index('(') + 1):create.index(')compound')]
+        else:
+            raise RuntimeError('Unparseable create.')
         cols = colstr.split(',')
         rval = ''
         for col in cols:
