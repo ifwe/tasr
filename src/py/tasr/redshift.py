@@ -115,6 +115,11 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         return json.loads(self.rs_master_schema_string(group),
                           object_pairs_hook=collections.OrderedDict)
 
+    def get_config_array(self, group, key):
+        if key in group.config:
+            return json.loads(group.config[key])
+        return []
+
     def rs_master_schema_string(self, group):
         '''This generates the RedShift-specific form of the master Avro schema.
         The RS form has the event type prefixes removed from the event-specific
@@ -131,12 +136,10 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         env[m_name] = u'"%s"' % m_name
 
         # build the RedShift schema
-        sec_ts_fields = []
-        if 'redshift.sec_timestamp_fields' in group.config:
-            sec_ts_fields = group.config['redshift.sec_timestamp_fields']
-        ms_ts_fields = []
-        if 'redshift.ms_timestamp_fields' in group.config:
-            ms_ts_fields = group.config['redshift.ms_timestamp_fields']
+        sec_ts_fields = self.get_config_array(group,
+                                              'redshift.sec_timestamp_fields')
+        ms_ts_fields = self.get_config_array(group,
+                                             'redshift.ms_timestamp_fields')
 
         skip_comma = True
         mss = (u'{"name":"%s","namespace":"%s","type":"%s","fields":[' %
@@ -147,7 +150,8 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             else:
                 mss += u','
 
-            if rs_name in sec_ts_fields or rs_name in ms_ts_fields:
+            # 'in' also catches substrings, so we need to loop with '=='
+            if rs_name in (sec_ts_fields + ms_ts_fields):
                 # handle timestamp conversion fields explicitly
                 mss += ('{"default":null,"name":"%s","type":%s}' %
                         (rs_name, '["null", "string"]'))
@@ -209,18 +213,14 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         if 's_' in g_name:
             g_name = g_name[2:]
 
-        sec_ts_fields = []
-        if 'redshift.sec_timestamp_fields' in group.config:
-            sec_ts_fields = group.config['redshift.sec_timestamp_fields']
-        ms_ts_fields = []
-        if 'redshift.ms_timestamp_fields' in group.config:
-            ms_ts_fields = group.config['redshift.ms_timestamp_fields']
-        string_4k_fields = []
-        if 'redshift.4k_string_fields' in group.config:
-            string_4k_fields = group.config['redshift.4k_string_fields']
-        string_64k_fields = []
-        if 'redshift.64k_string_fields' in group.config:
-            string_4k_fields = group.config['redshift.64k_string_fields']
+        sec_ts_fields = self.get_config_array(group,
+                                              'redshift.sec_timestamp_fields')
+        ms_ts_fields = self.get_config_array(group,
+                                             'redshift.ms_timestamp_fields')
+        string_4k_fields = self.get_config_array(group,
+                                                 'redshift.4k_string_fields')
+        string_64k_fields = self.get_config_array(group,
+                                                 'redshift.64k_string_fields')
 
         # figure user ID field to use as distkey
         uid_confirmed = False
@@ -250,7 +250,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                 sort.append(field.name)
 
             # now add the actual field definition
-            if field.name in sec_ts_fields or field.name in ms_ts_fields:
+            if field.name in (sec_ts_fields + ms_ts_fields):
                 create_statement += u'%s timestamp' % field.name
             else:
                 ddl_type = self.rs_ddl_type_string(field)
