@@ -172,6 +172,10 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             mss += ','
         mss += '{"name":"dt","type":"string"},'
 
+        # add an optional RS batch ID
+        mss += '{"default":null,"name":"redshift__batch_id",'
+        mss += '"type":["null","string"]},'
+
         # finally, add an MD5 event hash field of type 'bigint' that acts as a
         # primary key in the RedShift event tables.
         mss += '{"name":"redshift__event_md5_hash","type":"long"}'
