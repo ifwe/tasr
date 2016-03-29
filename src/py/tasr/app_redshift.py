@@ -59,13 +59,13 @@ def subject_redshift_master_schema(subject_name=None):
     removes any other complex types (e.g. -- meta__handlers).  The namespace
     shifts to tagged.events.redshift.
     '''
+    app = TASR_REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
-        TASR_REDSHIFT_APP.abort(404, ('RedShift not enabled for %s.' %
-                                      subject.name))
+        app.abort(404, ('RedShift not enabled for %s.' % subject.name))
     rs_mas = get_redshift_master(subject.name)
-    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_json_obj(subject),
-                                             None, 'application/json')
+    return app.object_response(rs_mas.rs_json_obj(subject),
+                               None, 'application/json')
 
 
 @TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_create')
@@ -81,13 +81,13 @@ def subject_redshift_ddl_create(subject_name=None):
     removes any other complex types (e.g. -- meta__handlers).  The namespace
     shifts to tagged.events.redshift.
     '''
+    app = TASR_REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
-        TASR_REDSHIFT_APP.abort(404, ('RedShift not enabled for %s.' %
-                                      subject.name))
+        app.abort(404, ('RedShift not enabled for %s.' % subject.name))
     rs_mas = get_redshift_master(subject.name)
-    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_ddl_create(subject),
-                                             None, 'text/plain')
+    return app.object_response(rs_mas.rs_ddl_create(subject),
+                               None, 'text/plain')
 
 
 @TASR_REDSHIFT_APP.post('/<subject_name>/redshift/dml_alter')
@@ -97,10 +97,10 @@ def subject_redshift_dml_alter(subject_name=None):
 
 @TASR_REDSHIFT_APP.post('/<subject_name>/redshift/ddl_alter')
 def subject_redshift_ddl_alter(subject_name=None):
+    app = TASR_REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
-        TASR_REDSHIFT_APP.abort(404, ('RedShift not enabled for %s.' %
-                                      subject.name))
+        app.abort(404, ('RedShift not enabled for %s.' % subject.name))
     old = None
     bod = bottle.request.body.getvalue()
     if not bod or bod == None or len(bod) == 0:
@@ -121,5 +121,35 @@ def subject_redshift_ddl_alter(subject_name=None):
             old = bod.split()
 
     rs_mas = get_redshift_master(subject.name)
-    return TASR_REDSHIFT_APP.object_response(rs_mas.rs_ddl_alter(subject, old),
-                                             None, 'text/plain')
+    return app.object_response(rs_mas.rs_ddl_alter(subject, old),
+                               None, 'text/plain')
+
+
+@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/ddl_create_staging')
+def subject_redshift_ddl_create_staging(subject_name=None):
+    '''Get the DDL statement to CREATE a staging table in RS.  The staging
+    table has the same field names as we have in our cluster (Hive, Spark),
+    and timestamps are bigint values measuring ms since the epoch -- not
+    timestamp values.
+    '''
+    app = TASR_REDSHIFT_APP
+    sub = get_subject(subject_name)
+    if not is_redshift_enabled(sub):
+        app.abort(404, ('RedShift not enabled for %s.' % sub.name))
+    rs_mas = get_redshift_master(sub.name)
+    return app.object_response(rs_mas.rs_ddl_create_staging(sub),
+                               None, 'text/plain')
+
+
+@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_insert_from_staging')
+def subject_redshift_dml_insert_from_staging(subject_name=None):
+    '''Get the DML statement to insert staging data into the main table,
+    converting bigints to timestamps as required.
+    '''
+    app = TASR_REDSHIFT_APP
+    sub = get_subject(subject_name)
+    if not is_redshift_enabled(sub):
+        app.abort(404, ('RedShift not enabled for %s.' % sub.name))
+    rs_mas = get_redshift_master(sub.name)
+    return app.object_response(rs_mas.rs_dml_insert_from_staging(sub),
+                               None, 'text/plain')

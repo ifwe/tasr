@@ -101,7 +101,8 @@ class TestTASRRedshift(TASRTestCase):
             elif not mfn in rsm_fnames:
                 self.fail('master field "%s" missing in RS master' % mfn)
 
-        rs_only = ['meta__kvpairs_json', 'dt', 'redshift__event_md5_hash']
+        rs_only = ['meta__kvpairs_json', 'dt', 'redshift__event_md5_hash',
+                   'redshift__batch_id']
         for rsmfn in rsm_fnames:
             if rsmfn in rs_only:
                 continue
