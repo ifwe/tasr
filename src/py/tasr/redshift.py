@@ -105,13 +105,13 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
 
             if non_null_type in avro.schema.PRIMITIVE_TYPES:
                 # map the avro type to an RS type
-                if non_null_type in ('int', 'boolean'):
+                if non_null_type in ('int', 'boolean', 'float'):
                     return non_null_type
                 elif non_null_type == u'long':
                     return 'bigint'
                 elif non_null_type == u'double':
                     return 'float'
-                elif non_null_type == u'string':
+                elif non_null_type in ('string', 'bytes'):
                     return 'varchar'
 
     def rs_name_to_field_map(self, group):
