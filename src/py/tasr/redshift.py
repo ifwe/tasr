@@ -349,21 +349,32 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                                              'redshift.ms_timestamp_fields')
 
         insert_stmt = 'INSERT INTO ramblas.%s_event(SELECT' % g_name
+        nf_map = self.rs_name_to_field_map(group)
         skip_comma = True
-        master_schema = self.get_master_schema_object()
-        for field in master_schema.fields:
+        for rs_name, field in nf_map.iteritems():
             if skip_comma:
                 skip_comma = False
             else:
                 insert_stmt += u','
 
-            if field.name in (sec_ts_fields + ms_ts_fields):
+            if rs_name in (sec_ts_fields + ms_ts_fields):
                 insert_stmt += u' (TIMESTAMP \'epoch\' + (%s' % field.name
                 if field.name in ms_ts_fields:
                     insert_stmt += u' / 1000'
                 insert_stmt += u') * INTERVAL \'1 Second\')'
-            else:
+            elif self.rs_avro_type_string(field):
                 insert_stmt += u' %s' % field.name
+            else:
+                skip_comma = True
+
+        # handle the added 'dt' field
+        if not skip_comma:
+            insert_stmt += ','
+        insert_stmt += u' (TIMESTAMP \'epoch\' + (source__timestamp /'
+        insert_stmt += u' 1000) * INTERVAL \'1 Second\'),'
+
+        # add a dummy batch ID to be replaced by the client
+        insert_stmt += u' \'YYYYMMDD\''
         insert_stmt += ' FROM staging.%s_event);' % g_name
 
         # prepend a conditional create to ensure the target table is there
