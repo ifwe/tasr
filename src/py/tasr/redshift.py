@@ -119,14 +119,14 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         and unmodified Avro field objects as values.  The field order is
         preserved from the master Avro schema.'''
         g_name = group.name
-        if 's_' in g_name:
+        if 's_' == g_name[:2]:
             g_name = g_name[2:]
 
         nf_map = collections.OrderedDict()
         for msf in self.get_master_schema_object().fields:
             rs_field_name = msf.name
             # clip the 's_' first if present
-            if 's_' in rs_field_name:
+            if 's_' == rs_field_name[:2]:
                 rs_field_name = rs_field_name[2:]
             if '__' in msf.name:
                 prefix = msf.name[:(msf.name.index('__') + 2)]
@@ -210,7 +210,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
     def generate_rs_create_statement(self, group, schema,
                                      rs_schemaname='ramblas', convert_ts=True):
         g_name = group.name
-        if 's_' in g_name:
+        if 's_' == g_name[:2]:
             g_name = g_name[2:]
 
         sec_ts_fields = self.get_config_array(group,
@@ -291,7 +291,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
             return create
 
         g_name = group.name
-        if 's_' in g_name:
+        if 's_' == g_name[:2]:
             g_name = g_name[2:]
 
         colstr = None
@@ -330,7 +330,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
     def rs_ddl_drop_staging(self, group):
         '''This generates a DROP DDL statement for a staging table in RS.'''
         g_name = group.name
-        if 's_' in g_name:
+        if 's_' == g_name[:2]:
             g_name = g_name[2:]
         return 'DROP TABLE IF EXISTS staging.%s_event;' % g_name
 
@@ -340,7 +340,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         for "ms since the epoch" bigint fields to timestamp fields.'''
 
         g_name = group.name
-        if 's_' in g_name:
+        if 's_' == g_name[:2]:
             g_name = g_name[2:]
 
         sec_ts_fields = self.get_config_array(group,
