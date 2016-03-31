@@ -348,9 +348,31 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
         ms_ts_fields = self.get_config_array(group,
                                              'redshift.ms_timestamp_fields')
 
-        insert_stmt = 'INSERT INTO ramblas.%s_event(SELECT' % g_name
+        insert_stmt = 'INSERT INTO ramblas.%s_event(' % g_name
         nf_map = self.rs_name_to_field_map(group)
         skip_comma = True
+        # first add the target (ramblas) fields
+        for rs_name, field in nf_map.iteritems():
+            if skip_comma:
+                skip_comma = False
+            else:
+                insert_stmt += u','
+
+            if self.rs_avro_type_string(field):
+                insert_stmt += u' %s' % rs_name
+            else:
+                skip_comma = True
+
+        if skip_comma:
+            skip_comma = False
+        else:
+            insert_stmt += u','
+        # include our added fields
+        insert_stmt += u' dt, redshift__batch_id)'
+
+        # now add the source (staging) fields
+        skip_comma = True
+        insert_stmt += u' SELECT'
         for rs_name, field in nf_map.iteritems():
             if skip_comma:
                 skip_comma = False
@@ -375,7 +397,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
 
         # add a dummy batch ID to be replaced by the client
         insert_stmt += u' \'YYYYMMDD\''
-        insert_stmt += ' FROM staging.%s_event);' % g_name
+        insert_stmt += ' FROM staging.%s_event;' % g_name
 
         # prepend a conditional create to ensure the target table is there
         create_stmt = self.rs_ddl_create(group)
