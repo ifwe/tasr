@@ -268,7 +268,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                     ss += ','
                 ss += sf
             create_stmt += 'compound sortkey(%s)' % ss
-        create_stmt += ';'
+        create_stmt += ';\nGRANT SELECT ON %s TO PUBLIC;' % t_name
         return create_stmt
 
     def rs_ddl_create(self, group):
