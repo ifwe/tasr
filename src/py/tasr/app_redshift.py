@@ -51,6 +51,30 @@ def redshift_subject_names():
     return subject_list_response(rs_subjects)
 
 
+@TASR_COLLECTION_APP.get('/subjects/redshift/freq/hourly')
+def redshift_hourly_subject_names():
+    rs_subjects = []
+    for sub in TASR_COLLECTION_APP.ASR.get_active_groups():
+        if 'redshift.enabled' in sub.config:
+            if sub.config['redshift.enabled'] == 'true':
+                if 'redshift.frequency' in sub.config:
+                    if sub.config['redshift.frequency'] == 'hourly':
+                        rs_subjects.append(sub)
+    return subject_list_response(rs_subjects)
+
+
+@TASR_COLLECTION_APP.get('/subjects/redshift/freq/daily')
+def redshift_daily_subject_names():
+    rs_subjects = []
+    for sub in TASR_COLLECTION_APP.ASR.get_active_groups():
+        if 'redshift.enabled' in sub.config:
+            if sub.config['redshift.enabled'] == 'true':
+                if 'redshift.frequency' in sub.config:
+                    if sub.config['redshift.frequency'] == 'daily':
+                        rs_subjects.append(sub)
+    return subject_list_response(rs_subjects)
+
+
 @TASR_REDSHIFT_APP.get('/<subject_name>/redshift/master')
 def subject_redshift_master_schema(subject_name=None):
     '''Get the RedShift-compatible version of the master subject schema.  The
