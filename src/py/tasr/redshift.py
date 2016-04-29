@@ -269,6 +269,7 @@ class RedshiftMasterAvroSchema(MasterAvroSchema):
                 ss += sf
             create_stmt += 'compound sortkey(%s)' % ss
         create_stmt += ';\nGRANT SELECT ON %s TO PUBLIC;' % t_name
+        create_stmt += '\nGRANT ALL ON %s TO pipeline;' % t_name
         return create_stmt
 
     def rs_ddl_create(self, group):
