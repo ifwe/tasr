@@ -556,10 +556,13 @@ class MasterAvroSchema(RegisteredAvroSchema):
             m_namespace = sv.namespace
             m_type = sv.type
             # check for field deletions
-            for mf in m_fields:
-                if mf not in sv.fields:
+            svfnames = list()
+            for svf in sv.fields:
+                svfnames.append(svf.name)
+            for mfname, mf in m_fields.iteritems():
+                if mfname not in svfnames:
                     # a deleted field must be defined as optional
-                    m_fields[mf.name] = MasterAvroSchema.forceFieldOptional(mf)
+                    m_fields[mfname] = MasterAvroSchema.forceFieldOptional(mf)
             # overwrites should be safe
             for svf in sv.fields:
                 m_fields[svf.name] = svf
