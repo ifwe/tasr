@@ -529,6 +529,17 @@ class MasterAvroSchema(RegisteredAvroSchema):
     def clear_cache(self):
         super(MasterAvroSchema, self).clear_cache()
 
+    @staticmethod
+    def forceFieldOptional(field):
+        if field.type.type == 'union':
+            return field
+        ftype = field.type.type
+        dummy_schema = ('{"name":"DummySchema","type":"record","fields":[' +
+                        '{"default":null,"name":"%s","type":["null","%s"]}]}' %
+                        (field.name, ftype))
+        ds = avro.schema.parse(dummy_schema)
+        return ds.fields[0]
+
     @property
     def master_schema_string(self):
         '''Checking version validity happens on adds.  We can assume anything
@@ -544,8 +555,15 @@ class MasterAvroSchema(RegisteredAvroSchema):
             m_name = sv.name
             m_namespace = sv.namespace
             m_type = sv.type
+            # check for field deletions
+            for mf in m_fields:
+                if mf not in sv.fields:
+                    # a deleted field must be defined as optional
+                    m_fields[mf.name] = MasterAvroSchema.forceFieldOptional(mf)
+            # overwrites should be safe
             for svf in sv.fields:
                 m_fields[svf.name] = svf
+
         # put in alpha field name order
         om_fields = collections.OrderedDict()
         for key in sorted(m_fields.keys()):
@@ -586,7 +604,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
         if not ras.is_valid:
             raise ValueError("Schema version is internally invalid.")
 
-        if self.schema_list == None:
+        if self.schema_list is None:
             self.schema_list = []
 
         if len(self.schema_list) > 0:
@@ -718,7 +736,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
         '''Sets the list of RegisteredAvroSchema objects that make up the
         versions spanned by the MasterAvroSchema.  If the list includes a non-
         compatible schema ordering, a ValueError will be raised.'''
-        if slist == None or not isinstance(slist, list) or len(slist) == 0:
+        if slist is None or not isinstance(slist, list) or len(slist) == 0:
             self.schema_list = None
             logging.debug('Not a list.')
             return
@@ -734,7 +752,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
             return False
 
         i_list = self.incompatibilities(obj)
-        if i_list == None or len(i_list) == 0:
+        if i_list is None or len(i_list) == 0:
             return True
         else:
             # TODO: better incompat logging
