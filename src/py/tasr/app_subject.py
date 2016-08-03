@@ -12,10 +12,14 @@ are included in lists of "all" subjects, but are excluded from lists of
 "active" subjects.
 '''
 import avro.schema
+import base64
 import bottle
+import hashlib
+import io
 import json
 import re
 import requests
+import struct
 import tasr.app_core
 import tasr.app_wsgi
 import tasr.group
@@ -375,6 +379,22 @@ def get_anchored_version_list(subject_name):
     return olds
 
 
+def get_master_sha256_id(subject_name):
+    '''Grabs all the SHA256 version id strings for the subject, concatenates
+    them into a single string and hashes that to get a master id we can use to
+    check for a cached master schema.
+    '''
+    buf = io.BytesIO()
+    buf.write(struct.pack('>b', tasr.registered_schema.SHA256_BYTES))
+    sha = hashlib.sha256()
+    for ras in get_anchored_version_list(subject_name):
+        sha.update(ras.sha256_id)
+    buf.write(sha.digest())
+    id_bytes = buf.getvalue()
+    buf.close()
+    return base64.b64encode(id_bytes)
+
+
 def recursive_master_schema(versions):
     '''Takes a list of versions and creates a "master", containing all the
     fields from the most recent compatible versions. It tries on the whole
@@ -399,17 +419,28 @@ def subject_master_schema(subject_name=None):
     from the most recent compatible versions.  If there is an anchor version
     set, the master will include versions from the anchor forward.'''
     abort_if_subject_bad(subject_name)
+    # first try the cached masters
+    asr = TASR_SUBJECT_APP.ASR
+    master_id = get_master_sha256_id(subject_name)
+    mas_d = asr.get_master_dict_for_sha256_id(master_id)
+    if mas_d and 'schema' in mas_d:
+        return TASR_SUBJECT_APP.json_str_response(mas_d['schema'])
+
+    # with no cached master, create one
     versions = get_anchored_version_list(subject_name)
     if not versions or len(versions) == 0:
         TASR_SUBJECT_APP.abort(404, ('No versions registered for %s.'
                                      % subject_name))
     (depth, mas) = recursive_master_schema(versions)
+    mas_str = json.dumps(mas.json_obj)
     # we might want to add a response header to indicate master depth
     if depth < len(versions):
         # master based on an incomplete set of versions
         bottle.response.status = 409
-    return TASR_SUBJECT_APP.object_response(mas.json_obj, None,
-                                            'application/json')
+    else:
+        # cache masters based on complete version sets
+        asr.set_master_dict_entry(master_id, 'schema', mas_str)
+    return TASR_SUBJECT_APP.json_str_response(mas_str)
 
 
 def is_back_compatible(subject_name, schema_str):

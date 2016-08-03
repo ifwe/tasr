@@ -98,7 +98,7 @@ class TestTASRRedshift(TASRTestCase):
                 rs_name = mfn[len(prefix):]
                 if rs_name not in rsm_fnames:
                     self.fail('master field "%s" not in RS master' % rs_name)
-            elif not mfn in rsm_fnames:
+            elif mfn not in rsm_fnames:
                 self.fail('master field "%s" missing in RS master' % mfn)
 
         rs_only = ['meta__kvpairs_json', 'dt', 'redshift__event_md5_hash',
@@ -106,9 +106,9 @@ class TestTASRRedshift(TASRTestCase):
         for rsmfn in rsm_fnames:
             if rsmfn in rs_only:
                 continue
-            if not rsmfn in master_fnames:
+            if rsmfn not in master_fnames:
                 prefixed_name = '%s%s' % (prefix, rsmfn)
-                if not prefixed_name in master_fnames:
+                if prefixed_name not in master_fnames:
                     self.fail('RS field "%s" missing in master' % rsmfn)
 
     def test_redshift_create_dml_for_subject(self):

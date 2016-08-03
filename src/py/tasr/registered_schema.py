@@ -524,10 +524,49 @@ class MasterAvroSchema(RegisteredAvroSchema):
     def __init__(self, slist=None):
         super(MasterAvroSchema, self).__init__()
         self.schema_list = None
+        self.schema_sha256_id_list = None
         self.set_schema_list(slist)
 
     def clear_cache(self):
         super(MasterAvroSchema, self).clear_cache()
+
+    @property
+    def master_sha256_id(self):
+        '''Access the (base64'd) sha256 as a property.
+        '''
+        return self.master_sha256_id_base64
+
+    @property
+    def master_sha256_id_base64(self):
+        '''Access the base64'd sha256 as a property.
+        '''
+        if self.schema_list is None:
+            return None
+        return base64.b64encode(self.master_sha256_id_bytes)
+
+    @property
+    def master_sha256_id_hex(self):
+        '''Access the hex sha256 as a property.
+        '''
+        if self.schema_list is None:
+            return None
+        return binascii.hexlify(self.master_sha256_id_bytes)
+
+    @property
+    def master_sha256_id_bytes(self):
+        '''The master sha256 id is the hash of the version sha256 ids in order
+        '''
+        if self.schema_sha256_id_list is None:
+            return None
+        buf = io.BytesIO()
+        buf.write(struct.pack('>b', SHA256_BYTES))
+        sha = hashlib.sha256()
+        for master_id in self.schema_sha256_id_list:
+            sha.update(master_id)
+        buf.write(sha.digest())
+        id_bytes = buf.getvalue()
+        buf.close()
+        return id_bytes
 
     @staticmethod
     def forceFieldOptional(field):
@@ -607,6 +646,9 @@ class MasterAvroSchema(RegisteredAvroSchema):
         if not ras.is_valid:
             raise ValueError("Schema version is internally invalid.")
 
+        if self.schema_sha256_id_list is None:
+            self.schema_sha256_id_list = []
+
         if self.schema_list is None:
             self.schema_list = []
 
@@ -619,6 +661,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
                     err_str += '%s\n' % issue
                 raise ValueError(err_str)
         self.schema_list.append(ras.schema)
+        self.schema_sha256_id_list.append(ras.sha256_id)
         self.schema_str = self.master_schema_string
 
     @staticmethod
@@ -741,6 +784,7 @@ class MasterAvroSchema(RegisteredAvroSchema):
         compatible schema ordering, a ValueError will be raised.'''
         if slist is None or not isinstance(slist, list) or len(slist) == 0:
             self.schema_list = None
+            self.schema_sha256_id_list = None
             logging.debug('Not a list.')
             return
         for elem in slist:
@@ -762,3 +806,5 @@ class MasterAvroSchema(RegisteredAvroSchema):
             for i in i_list:
                 print i
         return False
+
+

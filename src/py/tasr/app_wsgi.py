@@ -87,6 +87,20 @@ class TASRApp(bottle.Bottle):
         else:
             bottle.abort(code, text)
 
+    def json_str_response(self, json_str):
+        bottle.response.content_type = 'application/json'
+
+        callback_fn = get_jsonp_callback()
+        if callback_fn and re.match(r'.*\W.*', callback_fn):
+                self.abort(400, 'Invalid JSONP callback function name')
+
+        log_request(bottle.response.status_code)
+        if callback_fn:
+            return ("/**/typeof %s==='function' && %s(%s);" %
+                    (callback_fn, callback_fn, json_str))
+        else:
+            return json_str
+
     def object_response(self, obj, json_obj=None, default_type='text/plain'):
         rctype = response_content_type(default_type)
         bottle.response.content_type = rctype

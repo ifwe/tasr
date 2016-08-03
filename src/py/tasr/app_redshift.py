@@ -13,7 +13,8 @@ are included in lists of "all" subjects, but are excluded from lists of
 '''
 from tasr.app_core import TASR_COLLECTION_APP, subject_list_response
 from tasr.app_wsgi import is_json_type
-from tasr.app_subject import (get_subject, get_anchored_version_list)
+from tasr.app_subject import (get_subject, get_anchored_version_list,
+                              get_master_sha256_id, abort_if_subject_bad)
 import bottle
 import json
 import tasr.redshift
@@ -26,11 +27,34 @@ TASR_REDSHIFT_APP = tasr.app_wsgi.TASRApp()
 
 
 def get_redshift_master(subject_name):
-    subject = get_subject(subject_name)
-    versions = get_anchored_version_list(subject.name)
+    abort_if_subject_bad(subject_name)
+    versions = get_anchored_version_list(subject_name)
     if not versions or len(versions) == 0:
-        TASR_REDSHIFT_APP.abort(404, ('No versions for %s.' % subject.name))
+        TASR_REDSHIFT_APP.abort(404, ('No versions for %s.' % subject_name))
     return tasr.redshift.RedshiftMasterAvroSchema(versions)
+
+
+def get_redshift_master_dict(subject_name):
+    abort_if_subject_bad(subject_name)
+    # first try for a cached redshift master
+    master_id = get_master_sha256_id(subject_name)
+    asr = TASR_REDSHIFT_APP.ASR
+    mas_d = asr.get_master_dict_for_sha256_id(master_id)
+    if mas_d and ('rs_schema' in mas_d and 'rs_create' in mas_d and
+                  'rs_create_staging' in mas_d and
+                  'rs_insert_from_staging' in mas_d):
+        return mas_d
+    # cache miss, so get a RS Master object
+    subject = get_subject(subject_name)
+    rmas = get_redshift_master(subject_name)
+    # once we've created the master, we should cache all the generated strings
+    mas_d = dict()
+    mas_d['rs_schema'] = rmas.rs_master_schema_string(subject)
+    mas_d['rs_create'] = rmas.rs_ddl_create(subject)
+    mas_d['rs_create_staging'] = rmas.rs_ddl_create_staging(subject)
+    mas_d['rs_insert_from_staging'] = rmas.rs_dml_insert_from_staging(subject)
+    TASR_REDSHIFT_APP.ASR.update_master_dict(rmas.sha256_id, mas_d)
+    return mas_d
 
 
 def is_redshift_enabled(subject):
@@ -87,9 +111,8 @@ def subject_redshift_master_schema(subject_name=None):
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
-    rs_mas = get_redshift_master(subject.name)
-    return app.object_response(rs_mas.rs_json_obj(subject),
-                               None, 'application/json')
+    rmas_d = get_redshift_master_dict(subject_name)
+    return app.json_str_response(rmas_d['rs_schema'])
 
 
 @TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_create')
@@ -109,9 +132,8 @@ def subject_redshift_ddl_create(subject_name=None):
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
-    rs_mas = get_redshift_master(subject.name)
-    return app.object_response(rs_mas.rs_ddl_create(subject),
-                               None, 'text/plain')
+    rmas_d = get_redshift_master_dict(subject_name)
+    return app.object_response(rmas_d['rs_create'], None, 'text/plain')
 
 
 @TASR_REDSHIFT_APP.post('/<subject_name>/redshift/dml_alter')
@@ -157,12 +179,11 @@ def subject_redshift_ddl_create_staging(subject_name=None):
     timestamp values.
     '''
     app = TASR_REDSHIFT_APP
-    sub = get_subject(subject_name)
-    if not is_redshift_enabled(sub):
-        app.abort(404, ('RedShift not enabled for %s.' % sub.name))
-    rs_mas = get_redshift_master(sub.name)
-    return app.object_response(rs_mas.rs_ddl_create_staging(sub),
-                               None, 'text/plain')
+    subject = get_subject(subject_name)
+    if not is_redshift_enabled(subject):
+        app.abort(404, ('RedShift not enabled for %s.' % subject.name))
+    rmas_d = get_redshift_master_dict(subject_name)
+    return app.object_response(rmas_d['rs_create_staging'], None, 'text/plain')
 
 
 @TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_insert_from_staging')
@@ -171,9 +192,9 @@ def subject_redshift_dml_insert_from_staging(subject_name=None):
     converting bigints to timestamps as required.
     '''
     app = TASR_REDSHIFT_APP
-    sub = get_subject(subject_name)
-    if not is_redshift_enabled(sub):
-        app.abort(404, ('RedShift not enabled for %s.' % sub.name))
-    rs_mas = get_redshift_master(sub.name)
-    return app.object_response(rs_mas.rs_dml_insert_from_staging(sub),
+    subject = get_subject(subject_name)
+    if not is_redshift_enabled(subject):
+        app.abort(404, ('RedShift not enabled for %s.' % subject.name))
+    rmas_d = get_redshift_master_dict(subject_name)
+    return app.object_response(rmas_d['rs_insert_from_staging'],
                                None, 'text/plain')

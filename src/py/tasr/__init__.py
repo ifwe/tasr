@@ -85,6 +85,7 @@ class RedisSchemaRepository(object):
       'id.<sha256_id>':   hash (primary entry)
       'id.<md5_id>':      hash (basically an index of md5->sha256 ids)
       'g.<group name>':   hash (default field values, validators)
+      'm.<sha256_id>':    hash (cached master entry)
       'vid.<group name>': list (version sha256_id values, in order)
       'vts.<group name>': list (version timestamp values, in order)
 
@@ -116,6 +117,15 @@ class RedisSchemaRepository(object):
     epoch) of when the entry was added.  Note that this is also where validator
     class names for the group are held, with a "validators" field holding a
     whitespace-delimited string of class names.
+
+    The fourth hash entry caches constructed master schemas.  The sequence of
+    SHA256 ids identifying a group's schema versions are concatenated into a
+    single string, which is then hashed to give an SHA256 id for the master
+    for those versions in that order.  That master SHA256 id is prefixed with
+    'm.' to produce the key. The only required entries in the hash are 'schema'
+    and 'sha256_id'. These will not be exhaustively filled. Rather, these will
+    be added when one is requested and that request returns null.  Thus it
+    should be safe to clear these entries if master calculation changes.
 
     In addition to the hash entries, there are two lists for each group that
     has registered schemas: a 'vid.<group>' that holds the SHA256 id keys
@@ -186,11 +196,21 @@ class RedisSchemaRepository(object):
         each of the group_names with registered schemas.'''
         lua = '''
         local gv_list={}
-        local vid_keys=redis.call('keys', 'vid.*')
-        for _,vid_key in ipairs(vid_keys) do
-            gv_list[#gv_list+1] = vid_key
-            gv_list[#gv_list+1] = redis.call('llen', vid_key)
-        end
+        local cur = '0'
+        local ct = '1000'
+        local done = false
+        repeat
+            local result=redis.call('SCAN', cur, 'match', 'vid.*', 'count', ct)
+            cur = result[1]
+            local vid_keys = result[2]
+            for _,vid_key in ipairs(vid_keys) do
+                gv_list[#gv_list+1] = vid_key
+                gv_list[#gv_list+1] = redis.call('llen', vid_key)
+            end
+            if cur == '0' then
+                done = true
+            end
+        until done
         return gv_list
         '''
         self.lua_get_cur_versions = self.redis.register_script(lua)
@@ -259,6 +279,16 @@ class RedisSchemaRepository(object):
         rvals = self.lua_get_for_md5(keys=[md5_key, ])
         return RedisSchemaRepository.pair_seq_2_dict(rvals)
 
+    def get_master_dict_for_sha256_id(self, sha256_base64_id):
+        '''A low-level method to pull the hash struct identified by the passed
+        master schema sha256 id and return it as a dict.
+        '''
+        sha256_key = u'm.%s' % sha256_base64_id
+        hash_d = self.redis.hgetall(sha256_key)
+        if len(hash_d) == 0:
+            return None
+        return hash_d
+
     def get_cur_versions(self):
         '''A low-level method to get current version numbers for each group'''
         rvals = self.lua_get_cur_versions(keys=[])
@@ -272,7 +302,7 @@ class RedisSchemaRepository(object):
     def get_all_groups(self):
         '''Return a set of current group objects.'''
         group_names = []
-        for group_key in self.redis.keys('g.*'):
+        for group_key in self.redis.scan_iter('g.*', 1000):
             group_name = group_key[2:]
             group = self.lookup_group(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
@@ -353,6 +383,18 @@ class RedisSchemaRepository(object):
         for field in self.redis.hkeys(group_key):
             if field.startswith(prefix):
                 self.redis.hdel(group_key, field)
+
+    def update_master_dict(self, master_sha256_id, mas_dict):
+        for field, value in mas_dict.iteritems():
+            self.set_master_dict_entry(master_sha256_id, field, value)
+
+    def set_master_dict_entry(self, master_sha256_id, field, value):
+        '''Write the field/value pair to the hash struct identified by the
+        passed SHA256 master id. The master id is a hash of a concatenation of
+        version keys.
+        '''
+        master_key = u'm.%s' % master_sha256_id
+        self.redis.hset(master_key, field, value)
 
     def register_schema(self, group_name, schema_str):
         '''Register a schema string as a version for a group_name.'''

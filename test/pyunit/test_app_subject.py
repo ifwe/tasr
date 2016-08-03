@@ -13,6 +13,7 @@ import tasr.app
 import json
 import StringIO
 import requests
+from datetime import datetime, timedelta
 
 APP = tasr.app.TASR_APP
 APP.set_config_mode('local')
@@ -833,11 +834,47 @@ class TestTASRSubjectApp(TASRTestCase):
         # now check all of the extra fields from the version permutations
         for v in range(1, 4):
             fname = "fn_%s" % v
-            if not fname in master_fnames:
+            if fname not in master_fnames:
                 self.fail('missing field %s' % fname)
 
+    def test_master_cache_performance(self):
+        '''GET /tasr/subject/<subject>/master - as expected, repeatedly'''
+        schemas = []
+        # add a bunch of versions for our subject
+        for v in range(1, 4):
+            ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                         "fn_%s" % v)
+            resp = self.register_schema(self.event_type, ver_schema_str)
+            self.abort_diff_status(resp, 201)
+            # schema str with canonicalized whitespace returned
+            canonicalized_schema_str = resp.body
+            schemas.append(canonicalized_schema_str)
+
+        # grab the master
+        t0 = datetime.now()
+        resp = self.tasr_app.get('%s/master' % self.subject_url)
+        t1 = datetime.now()
+        no_cache_get_time = t1 - t0
+
+        # now grab the master another 10 times in succession
+        resp_list = []
+        duration_list = []
+        for _ in range(0, 10):
+            t0 = datetime.now()
+            resp_list.append(self.tasr_app.get('%s/master' % self.subject_url))
+            t1 = datetime.now()
+            duration_list.append(t1 - t0)
+
+        d_sum = sum(duration_list, timedelta(0))
+        avg_cached_get_time = (d_sum / len(duration_list))
+
+        # confirm that the cached response is faster on average
+        self.assertGreater(no_cache_get_time, avg_cached_get_time,
+                           ('Average cached get time %s > cold get time %s' %
+                            (avg_cached_get_time, no_cache_get_time)))
+
     def test_incompat_master_schema_for_subject(self):
-        '''GET /tasr/subject/<subject>/master - as expected'''
+        '''GET /tasr/subject/<subject>/master - with bad version registered'''
         mode = APP.config.mode
         orig_val = APP.config.config.get(mode, 'expose_force_register')
         APP.config.config.set(mode, 'expose_force_register', 'True')
@@ -879,7 +916,7 @@ class TestTASRSubjectApp(TASRTestCase):
             # now check all of the extra fields from the version permutations
             for v in range(1, 4):
                 fname = "fn_%s" % v
-                if not fname in master_fnames:
+                if fname not in master_fnames:
                     self.fail('missing field %s' % fname)
         finally:
             # reset expose_force_register to its original value
@@ -951,7 +988,7 @@ class TestTASRSubjectApp(TASRTestCase):
             # now check all of the extra fields from the version permutations
             for v in range(1, 4):
                 fname = "fn_%s" % v
-                if not fname in master_fnames:
+                if fname not in master_fnames:
                     self.fail('missing field %s' % fname)
         finally:
             # reset expose_force_register to its original value
@@ -965,7 +1002,14 @@ class TestTASRSubjectApp(TASRTestCase):
         '''
         mode = APP.config.mode
         orig_val = APP.config.config.get(mode, 'push_masters_to_hdfs')
-        APP.config.config.set(mode, 'push_masters_to_hdfs', 'True')
+        if orig_val == 'False':
+            # If the config is set to not use the feature, skip the test.  If
+            # you would like to _force_ the test, uncomment the line below and
+            # comment out the early return.
+            #
+            # APP.config.config.set(mode, 'push_masters_to_hdfs', 'True')
+            return
+
         try:
             resp = None
             schemas = []
@@ -996,7 +1040,7 @@ class TestTASRSubjectApp(TASRTestCase):
             # now check all of the extra fields from the version permutations
             for v in range(1, 4):
                 fname = "fn_%s" % v
-                if not fname in master_fnames:
+                if fname not in master_fnames:
                     self.fail('missing field %s' % fname)
         finally:
             # reset expose_force_register to its original value
