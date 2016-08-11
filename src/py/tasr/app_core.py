@@ -137,3 +137,25 @@ def active_subject_names():
     '''
     subjects = TASR_COLLECTION_APP.ASR.get_active_groups()
     return subject_list_response(subjects)
+
+
+@TASR_COLLECTION_APP.get('/subjects/sessionized')
+def sessionized_subject_names():
+    '''The S+V API expects this as a plaintext return body with one subject per
+    line (using '\n' as delimiters).  We add X-TASR headers with the subject
+    names as well.
+    '''
+    match_dict = {'config.sessionize': 'true'}
+    subjects = TASR_COLLECTION_APP.ASR.get_groups_matching_config(match_dict)
+    return subject_list_response(subjects)
+
+
+@TASR_COLLECTION_APP.get('/subjects/camus_consumed')
+def camus_consumed_subject_names():
+    '''The S+V API expects this as a plaintext return body with one subject per
+    line (using '\n' as delimiters).  We add X-TASR headers with the subject
+    names as well.
+    '''
+    match_dict = {'config.camus_consume': 'true'}
+    subjects = TASR_COLLECTION_APP.ASR.get_groups_matching_config(match_dict)
+    return subject_list_response(subjects)

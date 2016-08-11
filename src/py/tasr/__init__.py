@@ -301,25 +301,40 @@ class RedisSchemaRepository(object):
 
     def get_all_groups(self):
         '''Return a set of current group objects.'''
-        group_names = []
+        all_groups = []
         for group_key in self.redis.scan_iter('g.*', 1000):
             group_name = group_key[2:]
             group = self.lookup_group(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
-            group_names.append(group)
-        group_names.sort(key=lambda x: x.name.lower(), reverse=False)
-        return group_names
+            all_groups.append(group)
+        all_groups.sort(key=lambda x: x.name.lower(), reverse=False)
+        return all_groups
+
+    def get_groups_matching_config(self, match_dict=None):
+        '''Returns a set of groups matching k:v config pairs.'''
+        if match_dict is None:
+            return self.get_all_groups()
+        matching_groups = []
+        for group_key in self.redis.scan_iter('g.*', 1000):
+            group_name = group_key[2:]
+            g_meta = self.get_group_metadata(group_name)
+            # check meta_dict items are a subset of group_meta items
+            if all(it in g_meta.viewitems() for it in match_dict.viewitems()):
+                group = self.lookup_group(group_name)
+                matching_groups.append(group)
+        matching_groups.sort(key=lambda x: x.name.lower(), reverse=False)
+        return matching_groups
 
     def get_active_groups(self):
         '''Return a set of current group objects with at least one schema.'''
-        group_names = []
+        active_groups = []
         for group_key in self.get_cur_versions():
             group_name = group_key[4:]
             group = self.lookup_group(group_name)
             group.current_schema = self.get_latest_schema_for_group(group_name)
-            group_names.append(group)
-        group_names.sort(key=lambda x: x.name.lower(), reverse=False)
-        return group_names
+            active_groups.append(group)
+        active_groups.sort(key=lambda x: x.name.lower(), reverse=False)
+        return active_groups
 
     def get_group_key(self, group_name):
         '''A util method to get the redis key used for the group hash.'''
