@@ -1,0 +1,111 @@
+{
+  "name": "Comment",
+  "namespace": "tagged.redshift",
+  "type": "record",
+  "fields": [
+    {
+      "default": null,
+      "name": "from_user_id",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "default": null,
+      "name": "platform",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "session_id",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "source",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "sub_type",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "text",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "to_user_id",
+      "type": [
+        "null",
+        "long"
+      ]
+    },
+    {
+      "default": null,
+      "name": "meta_kvpairs_json",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "meta_request_id",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "meta_request_session_id",
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    {
+      "default": null,
+      "name": "meta_request_user_agent",
+      "type": [
+        "null",
+        "string"
+      ]
+    }
+    {
+      "name": "source_agent",
+      "type": "string"
+    },
+    {
+      "name": "source_ip_address",
+      "type": "string"
+    },
+    {
+      "name": "source_timestamp",
+      "type": "long"
+    },
+    {
+      "name": "source_date",
+      "type": "string"
+    },
+  ]
+}
