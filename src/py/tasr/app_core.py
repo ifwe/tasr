@@ -37,7 +37,7 @@ def schema_for_id_str(base64_id_str=None):
     standard Avro (1124-type) schema repository.  It is only really possible
     with the multi-type ID.
     '''
-    if base64_id_str == None or base64_id_str == '':
+    if base64_id_str is None or base64_id_str == '':
         TASR_ID_APP.abort(400, 'Missing base64 ID string.')
     reg_schema = TASR_ID_APP.ASR.get_schema_for_id_str(base64_id_str)
     if reg_schema:
@@ -65,7 +65,7 @@ def schema_for_schema_str():
     if not tasr.app_wsgi.is_json_type(c_type):
         TASR_SCHEMA_APP.abort(406, 'Content-Type not JSON.')
     bod = bottle.request.body.getvalue()
-    if bod == None or bod == '':
+    if bod is None or bod == '':
         TASR_SCHEMA_APP.abort(400, 'Expected a non-empty request body.')
     try:
         schema_str = bottle.request.body.getvalue()
@@ -136,6 +136,19 @@ def active_subject_names():
     names as well.
     '''
     subjects = TASR_COLLECTION_APP.ASR.get_active_groups()
+    return subject_list_response(subjects)
+
+
+@TASR_COLLECTION_APP.post('/subjects/match')
+def matched_subject_names():
+    '''The POST body should include a JSON document.  The top-level keys in the
+    JSON doc must be present in the subject metadata for a subject to be
+    included in the response set.
+    '''
+    filter_dict = dict()
+    for k, v in TASR_COLLECTION_APP.request_data_to_dict().iteritems():
+        filter_dict['config.' + k] = v
+    subjects = TASR_COLLECTION_APP.ASR.get_groups_matching_config(filter_dict)
     return subject_list_response(subjects)
 
 

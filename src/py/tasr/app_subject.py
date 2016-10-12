@@ -35,7 +35,7 @@ TASR_SUBJECT_APP = tasr.app_wsgi.TASRApp()
 
 def abort_if_value_bad(val, label='expected value'):
     '''Bail if val is None or an empty string.'''
-    if val == None or val == '':
+    if val is None or val == '':
         TASR_SUBJECT_APP.abort(400, 'Missing %s.' % label)
 
 
@@ -57,7 +57,7 @@ def abort_if_content_type_not_json():
 def abort_if_body_empty():
     '''A common check for PUT and POST endpoints.'''
     bod = bottle.request.body.getvalue()
-    if bod == None or bod == '':
+    if bod is None or bod == '':
         TASR_SUBJECT_APP.abort(400, 'Expected a non-empty request body.')
 
 
@@ -68,37 +68,6 @@ def get_subject(subject_name):
     if not subject:
         TASR_SUBJECT_APP.abort(404, 'No subject %s.' % subject_name)
     return subject
-
-
-def request_data_to_dict():
-    '''Extracts a dict from the request.  If the Content-Type is a JSON type,
-    we expect a valid, parseable JSON body.  Otherwise, we expect an HTML form.
-    If a form is passed, multiple values per parameter are not allowed, with a
-    400 status code thrown when they occur.'''
-    dct = dict()
-    if bottle.request.content_type == None:
-        return dct
-
-    rctype = bottle.request.content_type
-    rcbod = bottle.request.body.getvalue()
-    if rcbod and tasr.app_wsgi.is_json_type(rctype):
-        # if JSON is passed, try and extract the dict that way
-        try:
-            json_body = bottle.request.body.getvalue()
-            dct = json.loads(json_body)
-        except ValueError:
-            TASR_SUBJECT_APP.abort(400, 'Invalid JSON')
-    elif rcbod and isinstance(rctype, basestring):
-        ftypes = ['application/x-www-form-urlencoded', 'multipart/form-data']
-        if rctype.lower() in ftypes:
-            #dct = dict()
-            for key in bottle.request.forms.keys():
-                plist = bottle.request.forms.getall(key)
-                if len(plist) > 1:
-                    TASR_SUBJECT_APP.abort(400, 'Multiple vals for %s' % key)
-                if len(plist) == 1:
-                    dct[key] = plist[0]
-    return dct
 
 
 @TASR_SUBJECT_APP.get('/')
@@ -139,7 +108,7 @@ def register_subject(subject_name=None):
     existing one for the subject, a 409 (conflict) status will be returned.
     '''
     abort_if_subject_bad(subject_name)
-    config_dict = request_data_to_dict()
+    config_dict = TASR_SUBJECT_APP.request_data_to_dict()
     subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
     if subject:
         # subject already there, so check for conflicts
@@ -206,7 +175,7 @@ def update_subject_config(subject_name=None):
     abort_if_subject_bad(subject_name)
     # figure out the dict to set
     config_dict = dict()
-    for key, val in request_data_to_dict().iteritems():
+    for key, val in TASR_SUBJECT_APP.request_data_to_dict().iteritems():
         ckey = 'config.%s' % key
         config_dict[ckey] = val
     asr = TASR_SUBJECT_APP.ASR
@@ -221,7 +190,7 @@ def update_subject_config(subject_name=None):
 def get_subject_config_entry(subject_name=None, key=None):
     '''Get the value for the KEY in config dict for a subject.'''
     subject = get_subject(subject_name)
-    if not key in subject.config:
+    if key not in subject.config:
         TASR_SUBJECT_APP.abort(404, ('No %s in config for %s.' %
                                      (key, subject_name)))
     return TASR_SUBJECT_APP.subject_config_entry_response(subject, key)
@@ -269,7 +238,7 @@ def set_subject_anchor_version(subject_name=None, id_str=None):
     id_list = []
     for sha256_id in asr.get_all_version_sha256_ids_for_group(subject_name):
         id_list.append(sha256_id[3:])
-    if not id_str in id_list:
+    if id_str not in id_list:
         TASR_SUBJECT_APP.abort(404, 'No %s version with ID %s' %
                                (subject_name, id_str))
 
@@ -289,7 +258,7 @@ def get_subject_anchor_version(subject_name=None):
     version has been set, a 404 is returned.'''
     abort_if_subject_bad(subject_name)
     smd = TASR_SUBJECT_APP.ASR.get_group_metadata(subject_name)
-    if not 'anchor' in smd:
+    if 'anchor' not in smd:
         TASR_SUBJECT_APP.abort(404, 'No anchor set for %s.' % subject_name)
     return smd['anchor']
 

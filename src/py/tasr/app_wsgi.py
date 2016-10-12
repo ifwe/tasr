@@ -50,7 +50,6 @@ class TASRApp(bottle.Bottle):
         # now update any submodule ASRs
         for (_, subapp) in self.mounted.iteritems():
             if isinstance(subapp, TASRApp):
-                #subapp.ASR = self.ASR
                 subapp.set_config_mode(mode)
 
     def mount(self, path, subapp):
@@ -59,6 +58,36 @@ class TASRApp(bottle.Bottle):
         if isinstance(subapp, TASRApp):
             subapp.ASR = self.ASR
             subapp.mounted_path = path
+
+    def request_data_to_dict(self):
+        '''Extracts a dict from the request.  If the Content-Type is a JSON
+        type, we expect a valid, parseable JSON body.  Otherwise, we expect an
+        HTML form. If a form is passed, multiple values per parameter are not
+        allowed, with a 400 status code thrown when they occur.'''
+        dct = dict()
+        if bottle.request.content_type is None:
+            return dct
+
+        rctype = bottle.request.content_type
+        rcbod = bottle.request.body.getvalue()
+        if rcbod and tasr.app_wsgi.is_json_type(rctype):
+            # if JSON is passed, try and extract the dict that way
+            try:
+                json_body = bottle.request.body.getvalue()
+                dct = json.loads(json_body)
+            except ValueError:
+                self.abort(400, 'Invalid JSON')
+        elif rcbod and isinstance(rctype, basestring):
+            ftypes = ['application/x-www-form-urlencoded',
+                      'multipart/form-data']
+            if rctype.lower() in ftypes:
+                for key in bottle.request.forms.keys():
+                    plist = bottle.request.forms.getall(key)
+                    if len(plist) > 1:
+                        self.abort(400, 'Multiple vals for %s' % key)
+                    if len(plist) == 1:
+                        dct[key] = plist[0]
+        return dct
 
     def error_dict(self, status_code=500, message='Error'):
         errd = {'application': 'TASR', 'version': TASR_VERSION}
