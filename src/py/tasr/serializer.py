@@ -10,6 +10,7 @@ import struct
 import avro.io
 import avro.schema
 import requests
+from tasr.headers import SchemaHeaderBot
 
 
 class MTSerializer(object):
@@ -25,7 +26,7 @@ class MTSerializer(object):
     SV2 = 0x02
 
     def __init__(self, sha256_id=None, topic=None, version_number=None,
-                 tasr_url='http://tasr.tagged.com'):
+                 tasr_url='http://tasr.tagged.com', tasr_app=None):
         '''
         The schema must be registered in TASR and must be identified uniquely.
         Your two choices are:
@@ -33,6 +34,7 @@ class MTSerializer(object):
         - a topic and version number
         '''
         self.tasr_url = tasr_url
+        self.tasr_app = tasr_app
         self.topic = None
         self.version_number = None
         self.sha256_id = None
@@ -45,17 +47,21 @@ class MTSerializer(object):
         if sha256_id:
             self.sha256_id = sha256_id
             self.topic_versions = dict()
-            r = requests.get(self.tasr_url + '/tasr/id/' + self.sha256_id)
+            url = self.tasr_url + '/tasr/id/' + self.sha256_id
+            if self.tasr_app is None and self.tasr_url is not None:
+                # get the schema from a live TASR via the URL
+                r = requests.get(url)
+            elif self.tasr_app is not None:
+                # get the schema from a passed app (testing)
+                r = self.tasr_app.request(url, method='GET')
+                r.charset = 'utf8'  # ensuer we can access response.text
             if r.status_code == 200:
-                logging.info('headers: %s', r.headers)
-                svl = r.headers['X-Tasr-Schema-Subject-Version-Map'].split(',')
-                for sv in svl:
-                    sva = sv.split('=', 1)
-                    subject = sva[0]
-                    version = int(sva[1])
+                rs_meta = SchemaHeaderBot.extract_metadata(r)
+                for subject in rs_meta.group_names:
                     if subject not in self.topic_versions:
                         self.topic_versions[subject] = []
-                    self.topic_versions[subject].append(version)
+                    ver = rs_meta.group_version(subject)
+                    self.topic_versions[subject].append(ver)
                 # use the first topic as the topic if there are more
                 self.topic = self.topic_versions.keys()[0]
                 # use the last version for the topic as the topic
@@ -74,7 +80,12 @@ class MTSerializer(object):
                 logging.warn('Grabbing latest version for %s', self.topic)
                 url = ('%s/tasr/subject/%s/latest' %
                        (self.tasr_url, self.topic))
-            r = requests.get(url)
+            if self.tasr_app is None and self.tasr_url is not None:
+                # get the schema from a live TASR via the URL
+                r = requests.get(url)
+            elif self.tasr_app is not None:
+                # get the schema from a passed app (testing)
+                r = self.tasr_app.request(url, method='GET')
             if r.status_code == 200:
                 self.version_number = int(r.headers['X-Tasr-Schema-Version'])
                 self.sha256_id = r.headers['X-Tasr-Schema-Sha256']
