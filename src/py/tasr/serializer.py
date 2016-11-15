@@ -13,6 +13,20 @@ import requests
 from tasr.headers import SchemaHeaderBot
 
 
+class MTLeader(object):
+    def __init__(self, msg_bytes):
+        msg = bytearray(msg_bytes[:33])
+        self.flag_byte = int(msg[0])
+        self.version_number = None
+        self.sha256_id = None
+        if self.flag_byte == MTSerDe.SV1: 
+            self.version_number = int(msg[1])
+        elif self.flag_byte == MTSerDe.SV2:
+            self.version_number = struct.unpack('>H', msg[1:3])[0]
+        elif self.flag_byte == MTSerDe.SHA256:
+            self.sha256_id = base64.b64encode(bytes(msg))
+
+
 class MTSerDe(object):
     '''
     Common superclass for serializer and deserializer classes supporting the
@@ -120,6 +134,14 @@ class MTSerDe(object):
             buf.write(struct.pack('>H', self.version_number))
             self.sv2_bytes = buf.getvalue()
         return self.sv2_bytes
+    
+    def __repr__(self):
+        return '%s[%s,%s,%s]' % (self.__class__.__name__, self.topic,
+                                 self.version_number, self.sha256_id)
+
+    def __str__(self):
+        return '%s[%s,%s,%s]' % (self.__class__.__name__, self.topic,
+                                 self.version_number, self.sha256_id)
 
 
 class MTDeserializer(MTSerDe):
