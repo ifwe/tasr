@@ -4,14 +4,14 @@ import sys
 import os
 import logging
 import argparse
-from tasr.ktail import KTail
+from tasr.utils.ktail import KTail
 
 
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('topic', help='The Kafka topic to tail. (required)')
     parser.add_argument('-v', '--verbose', action='count')
-    parser.add_argument('--tasr', default='http://tasr.tagged.com')
+    parser.add_argument('--tasr', default='tasr.tagged.com:80')
     parser.add_argument('--kafka', nargs='*', default=['kafkadatahub01:9092'])
     args = parser.parse_args(argv[1:])
 
@@ -24,11 +24,11 @@ def main(argv):
         verbosity = logging.WARN
 
     logging.getLogger().setLevel(verbosity)
-    logging.info('topic: %s, tasr_url: %s, bootstrap_servers: %s',
+    logging.info('topic: %s, tasr_host: %s, kafka_hosts: %s',
                  args.topic, args.tasr, args.kafka)
 
     try:
-        kt = KTail(args.topic, bootstrap_servers=args.kafka, tasr_url=args.tasr)
+        kt = KTail(args.topic, kafka_hosts=args.kafka, tasr_host=args.tasr)
         kt.log.setLevel(verbosity)
         for event_dict in kt:
             sys.stdout.write(str(event_dict) + '\n')

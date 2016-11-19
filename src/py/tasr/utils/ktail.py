@@ -27,7 +27,7 @@ class KTail(object):
         self.log.setLevel(logging.WARN)
 
         self.topic = topic
-        self.tasr_url = tasr_host
+        self.tasr_url = 'http://' + tasr_host
         self.consumer = KafkaConsumer(topic, group_id='ktail',
                                       auto_offset_reset=offset,
                                       enable_auto_commit=False,
