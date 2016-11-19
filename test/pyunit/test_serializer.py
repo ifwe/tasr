@@ -3,14 +3,14 @@ Created on Oct 19, 2016
 
 @author: cmills
 '''
+import datetime
+import unittest
 from tasr_test import TASRTestCase
 
-from datetime import datetime
-import unittest
 from webtest import TestApp
 import tasr.app
 from tasr.headers import SchemaHeaderBot
-from tasr.serializer import MTSerializer
+from tasr.utils.serializer import MTSerializer
 
 APP = tasr.app.TASR_APP
 APP.set_config_mode('local')
@@ -46,23 +46,26 @@ class TestSerializer(TASRTestCase):
                                      expect_errors=expect_errors,
                                      body=schema_str)
 
-    def minimalGoldEventDict(self, uid=123l, ts=datetime.now().strftime('%s')):
+    @staticmethod
+    def minimal_gold_event_dict(uid=long(123), dt=None):
+        if dt is None:
+            dt = datetime.datetime.now()
         ged = dict()
-        ged['source__timestamp'] = long(ts)
+        ged['source__timestamp'] = long(dt.strftime('%s'))
         ged['source__agent'] = 'pyunit_test'
         ged['source__ip_address'] = '127.0.0.1'
         ged['gold__user_id'] = uid
         return ged
 
     # tests
-    def testFailCreateMTSerializer(self):
+    def test_fail_create_mtserializer(self):
         try:
             MTSerializer()
             self.fail('Should have thrown exception for null creation.')
         except RuntimeError:
             pass
-        
-    def testCreateMTSerializerFromSHA(self):
+
+    def test_create_mts_from_sha(self):
         # first reg the schema
         resp = self.register_schema(self.event_type, self.schema_str)
         self.abort_diff_status(resp, 201)
@@ -72,7 +75,7 @@ class TestSerializer(TASRTestCase):
                            tasr_app=self.tasr_app)
         self.assertEqual(self.event_type, mts.topic, 'topic mismatch')
 
-    def testSerializeEvent(self):
+    def test_serialize_event(self):
         # prelims -- reg schema, instantiate mts
         resp = self.register_schema(self.event_type, self.schema_str)
         self.abort_diff_status(resp, 201)
@@ -80,8 +83,8 @@ class TestSerializer(TASRTestCase):
         mts = MTSerializer(sha256_id=meta.sha256_id, tasr_url=self.url_prefix,
                            tasr_app=self.tasr_app)
         # create a dict to serialize, then pass it to mts
-        gold_event = self.minimalGoldEventDict()
-        ser_msg = mts.serialize_event(gold_event)
+        gold_event = self.minimal_gold_event_dict()
+        mts.serialize_event(gold_event)
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
