@@ -13,22 +13,6 @@ import requests
 from tasr.headers import SchemaHeaderBot
 
 
-class MTLeader(object):
-    '''Simplify access to the features of a MT message leader.'''
-    def __init__(self, msg_bytes):
-        '''Construct a leader object from raw bytes of a multitype message.'''
-        msg = bytearray(msg_bytes[:33])
-        self.flag_byte = int(msg[0])
-        self.version_number = None
-        self.sha256_id = None
-        if self.flag_byte == MTSerDe.SV1:
-            self.version_number = int(msg[1])
-        elif self.flag_byte == MTSerDe.SV2:
-            self.version_number = struct.unpack('>H', msg[1:3])[0]
-        elif self.flag_byte == MTSerDe.SHA256:
-            self.sha256_id = base64.b64encode(bytes(msg))
-
-
 class MTSerDe(object):
     '''
     Common superclass for serializer and deserializer classes supporting the
@@ -79,6 +63,8 @@ class MTSerDe(object):
                 self.topic = self.topic_versions.keys()[0]
                 # use the last version for the topic as the topic
                 self.version_number = self.topic_versions[self.topic][-1]
+                if not resp.charset:
+                    resp.charset = 'utf8'
                 self.schema_json = resp.text
             else:
                 raise RuntimeError('TASR request failed, status code %s',
@@ -103,6 +89,8 @@ class MTSerDe(object):
             if resp.status_code == 200:
                 self.version_number = int(resp.headers['X-Tasr-Schema-Version'])
                 self.sha256_id = resp.headers['X-Tasr-Schema-Sha256']
+                if not resp.charset:
+                    resp.charset = 'utf8'
                 self.schema_json = resp.text
             else:
                 raise RuntimeError('TASR request failed, status code %s',
@@ -146,67 +134,6 @@ class MTSerDe(object):
     def __str__(self):
         return '%s[%s,%s,%s]' % (self.__class__.__name__, self.topic,
                                  self.version_number, self.sha256_id)
-
-
-class MTDeserializer(MTSerDe):
-    '''
-    The MTDeserializer class is initialized for a specific schema, passed as an
-    SHA-256 id, a topic and version number, or as the actual schema JSON (as a
-    string). Once initialized, the object can take serialized message bytes and
-    produce a more easily accessed and used dict version of the event.
-    '''
-    def __init__(self, sha256_id=None, topic=None, version_number=None,
-                 tasr_url='http://tasr.tagged.com', tasr_app=None):
-        super(MTDeserializer, self).__init__(sha256_id=sha256_id,
-                                             topic=topic,
-                                             version_number=version_number,
-                                             tasr_url=tasr_url,
-                                             tasr_app=tasr_app)
-        self.reader = None
-
-    def validate_mt_message(self, msg_bytes):
-        '''Check that the message header matches the object's schema. If not,
-        raise an exception. If so, return the (headless) event bytes.'''
-        msg = bytearray(msg_bytes)
-        if int(msg[0]) == MTSerDe.SV1:
-            # 1 byte s+v leader, if ver is right, return remaining bytes
-            if int(msg[1]) == self.version_number:
-                return bytes(msg[2:])
-            else:
-                raise RuntimeError('SV1-type ID mismatch: %s is not %s' %
-                                   (int(msg[1]), self.version_number))
-        elif int(msg[0]) == MTSerDe.SV2:
-            # 2 byte s+v leader, unpack next 2 bytes for message version number
-            msg_version_number = struct.unpack('>H', msg[1:3])[0]
-            # if ver is right, return remaining bytes
-            if msg_version_number == self.version_number:
-                return bytes(msg[3:])
-            else:
-                raise RuntimeError('SV2-type ID mismatch: %s is not %s' %
-                                   (msg_version_number, self.version_number))
-        elif int(msg[0]) == MTSerDe.SHA256:
-            # check whole 33 byte leader against stored SHA256 leader
-            if msg[:33] == self.sha256_bytes:
-                return bytes(msg[33:])
-            else:
-                raise RuntimeError('SHA-type ID mismatch: %s is not %s' %
-                                   (msg[:33], self.sha256_bytes))
-        # if we get this far, the MT leader was not valid, so raise an error
-        raise RuntimeError('Bad leader type: %s', hex(msg[0]))
-
-    def mt_message_to_dict(self, msg_bytes):
-        '''Deserialize a block of bytes into an event dict.'''
-        if not self.schema:
-            self.schema = avro.schema.parse(self.schema_json)
-        if not self.reader:
-            self.reader = avro.io.DatumReader(self.schema)
-        event_bytes = self.validate_mt_message(msg_bytes)
-        decoder = avro.io.BinaryDecoder(io.BytesIO(event_bytes))
-        return self.reader.read(decoder)
-
-    def get_serializer(self):
-        '''Convenience method to get a serializer for the same schema.'''
-        return MTSerializer(sha256_id=self.sha256_id)
 
 
 class MTSerializer(MTSerDe):
@@ -253,4 +180,87 @@ class MTSerializer(MTSerDe):
 
     def get_deserializer(self):
         '''Convenience method to get a deserializer for the same schema.'''
-        return MTDeserializer(sha256_id=self.sha256_id)
+        return MTDeserializer(sha256_id=self.sha256_id, tasr_url=self.tasr_url,
+                              tasr_app=self.tasr_app)
+
+
+class MTLeader(object):
+    '''Simplify access to the features of a MT message leader.'''
+    def __init__(self, msg_bytes):
+        '''Construct a leader object from raw bytes of a multitype message.'''
+        msg = bytearray(msg_bytes[:33])
+        self.flag_byte = int(msg[0])
+        self.version_number = None
+        self.sha256_id = None
+        if self.flag_byte == MTSerDe.SV1:
+            self.version_number = int(msg[1])
+        elif self.flag_byte == MTSerDe.SV2:
+            self.version_number = struct.unpack('>H', msg[1:3])[0]
+        elif self.flag_byte == MTSerDe.SHA256:
+            self.sha256_id = base64.b64encode(bytes(msg))
+
+    def validate(self, version_number=None, sha256_id=None):
+        '''Checks that the version number or sha256_id in the leader matches
+        the one expected by the deserializer.  Return the integer offset to the
+        beginning of the serialized event bytes.
+        '''
+        if self.flag_byte == MTSerDe.SV1:
+            if self.version_number == version_number:
+                return self.flag_byte + 1
+            raise RuntimeError('SV1-type ID mismatch: %s is not %s' %
+                               (self.version_number, version_number))
+        elif self.flag_byte == MTSerDe.SV2:
+            if self.version_number == version_number:
+                return self.flag_byte + 1
+            raise RuntimeError('SV2-type ID mismatch: %s is not %s' %
+                               (self.version_number, version_number))
+        elif self.flag_byte == MTSerDe.SHA256:
+            if self.sha256_id == sha256_id:
+                return self.flag_byte + 1
+            raise RuntimeError('SHA-type ID mismatch: %s is not %s' %
+                               (self.sha256_id, sha256_id))
+        raise RuntimeError('Bad leader type: %s', hex(self.flag_byte))
+        
+
+
+class MTDeserializer(MTSerDe):
+    '''
+    The MTDeserializer class is initialized for a specific schema, passed as an
+    SHA-256 id, a topic and version number, or as the actual schema JSON (as a
+    string). Once initialized, the object can take serialized message bytes and
+    produce a more easily accessed and used dict version of the event.
+    '''
+    def __init__(self, sha256_id=None, topic=None, version_number=None,
+                 tasr_url='http://tasr.tagged.com', tasr_app=None):
+        super(MTDeserializer, self).__init__(sha256_id=sha256_id,
+                                             topic=topic,
+                                             version_number=version_number,
+                                             tasr_url=tasr_url,
+                                             tasr_app=tasr_app)
+        self.reader = None
+
+    def validate_mt_message(self, msg_bytes):
+        '''Check that the message header matches the object's schema. If not,
+        raise an exception. If so, return the (headless) event bytes.'''
+        leader = MTLeader(msg_bytes[:33])
+        event_offset = leader.validate(self.version_number, self.sha256_id)
+        return bytes(bytearray(msg_bytes)[event_offset:])
+
+    def deserialize_event(self, event_bytes):
+        '''Deserialize a block of serialized event bytes into an event dict.'''
+        if not self.schema:
+            self.schema = avro.schema.parse(self.schema_json)
+        if not self.reader:
+            self.reader = avro.io.DatumReader(self.schema)
+        decoder = avro.io.BinaryDecoder(io.BytesIO(event_bytes))
+        return self.reader.read(decoder)
+
+    def mt_message_to_dict(self, msg_bytes):
+        '''Deserialize a block of bytes with an MT leader into an event dict.'''
+        event_bytes = self.validate_mt_message(msg_bytes)
+        return self.deserialize_event(event_bytes)
+
+    def get_serializer(self):
+        '''Convenience method to get a serializer for the same schema.'''
+        return MTSerializer(sha256_id=self.sha256_id, tasr_url=self.tasr_url,
+                            tasr_app=self.tasr_app)
