@@ -257,7 +257,9 @@ class MTDeserializer(MTSerDe):
 
     def mt_message_to_dict(self, msg_bytes):
         '''Deserialize a block of bytes with an MT leader into an event dict.'''
+        logging.debug('message bytes: %s', msg_bytes)
         event_bytes = self.validate_mt_message(msg_bytes)
+        logging.debug('event bytes: %s', event_bytes)
         return self.deserialize_event(event_bytes)
 
     def get_serializer(self):
