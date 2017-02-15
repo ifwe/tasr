@@ -63,8 +63,8 @@ class MTSerDe(object):
                 self.topic = self.topic_versions.keys()[0]
                 # use the last version for the topic as the topic
                 self.version_number = self.topic_versions[self.topic][-1]
-                if not resp.charset:
-                    resp.charset = 'utf8'
+                if not resp.encoding:
+                    resp.encoding = 'utf-8'
                 self.schema_json = resp.text
             else:
                 raise RuntimeError('TASR request failed, status code %s',
@@ -89,8 +89,8 @@ class MTSerDe(object):
             if resp.status_code == 200:
                 self.version_number = int(resp.headers['X-Tasr-Schema-Version'])
                 self.sha256_id = resp.headers['X-Tasr-Schema-Sha256']
-                if not resp.charset:
-                    resp.charset = 'utf8'
+                if not resp.encoding:
+                    resp.encoding = 'utf-8'
                 self.schema_json = resp.text
             else:
                 raise RuntimeError('TASR request failed, status code %s',
@@ -266,3 +266,4 @@ class MTDeserializer(MTSerDe):
         '''Convenience method to get a serializer for the same schema.'''
         return MTSerializer(sha256_id=self.sha256_id, tasr_url=self.tasr_url,
                             tasr_app=self.tasr_app)
+
