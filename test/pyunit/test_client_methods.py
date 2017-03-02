@@ -8,7 +8,6 @@ from client_test import TestTASRAppClient
 
 import unittest
 import tasr.client
-import tasr.client_legacy
 import httmock
 
 
@@ -311,7 +310,7 @@ class TestTASRClientMethods(TestTASRAppClient):
         try:
             self.bare_get_for_subject_skeleton(self.schema_str, bad_ver)
             self.fail('Should have thrown an TASRError')
-        except tasr.client_legacy.TASRError as te:
+        except tasr.client.TASRError as te:
             self.assertTrue(te, 'Missing TASRError')
 
     def test_bare_lookup_by_version(self):

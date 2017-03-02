@@ -33,7 +33,6 @@ For running the app in standalone mode, please see the app_standalone module.
 '''
 import tasr.app_wsgi
 from tasr.app_core import TASR_COLLECTION_APP, TASR_ID_APP, TASR_SCHEMA_APP
-from tasr.app_topic import TASR_TOPIC_APP
 from tasr.app_subject import TASR_SUBJECT_APP
 from tasr.app_redshift import TASR_REDSHIFT_APP
 
@@ -43,7 +42,6 @@ TASR_APP = tasr.app_wsgi.TASRApp()
 TASR_APP.mount('/tasr/collection', TASR_COLLECTION_APP)
 TASR_APP.mount('/tasr/id', TASR_ID_APP)
 TASR_APP.mount('/tasr/schema', TASR_SCHEMA_APP)
-TASR_APP.mount('/tasr/topic', TASR_TOPIC_APP)
 # the RS endpoints are extensions to the subject endpoints
 TASR_SUBJECT_APP.merge(TASR_REDSHIFT_APP)
 TASR_APP.mount('/tasr/subject', TASR_SUBJECT_APP)

@@ -922,6 +922,58 @@ class TestTASRSubjectApp(TASRTestCase):
             # reset expose_force_register to its original value
             APP.config.config.set(mode, 'expose_force_register', orig_val)
 
+    def test_conflictok_master_schema_for_subject(self):
+        '''GET /tasr/subject/<subject>/master - with bad version registered and
+        conflictok flag specified in the request.  Should return 200 status.'''
+        mode = APP.config.mode
+        orig_val = APP.config.config.get(mode, 'expose_force_register')
+        APP.config.config.set(mode, 'expose_force_register', 'True')
+        try:
+            # first add a version that will not be compatible
+            targ = '{"name": "source__timestamp", "type": "long"}'
+            replacement = '{"name": "source__timestamp", "type": "int"}'
+            incompat_schema_str = self.schema_str.replace(targ, replacement, 1)
+            resp = self.register_schema(self.event_type, incompat_schema_str)
+            self.abort_diff_status(resp, 201)
+            # now force register a set of compatible schemas
+            schemas = []
+            for v in range(1, 4):
+                ver_schema_str = self.get_schema_permutation(self.schema_str,
+                                                             "fn_%s" % v)
+                reg_url = '%s/force_register' % self.subject_url
+                resp1 = self.tasr_app.request(reg_url, method='PUT',
+                                              content_type=self.content_type,
+                                              expect_errors=False,
+                                              body=ver_schema_str)
+                self.abort_diff_status(resp1, 201)
+                # schema str with canonicalized whitespace returned
+                canonicalized_schema_str = resp1.body
+                schemas.append(canonicalized_schema_str)
+
+            # grab the master and check that all the expected fields are there
+            reg_url = '%s/master?conflictok' % self.subject_url
+            resp2 = self.tasr_app.request(reg_url, method='GET',
+                                          content_type=self.content_type,
+                                          expect_errors=False,
+                                          body=None)
+            self.abort_diff_status(resp2, 200)
+            master_fnames = []
+            for mfield in json.loads(resp2.body)['fields']:
+                master_fnames.append(mfield['name'])
+            # check the original fields
+            for ofield in json.loads(self.schema_str)['fields']:
+                if not ofield['name'] in master_fnames:
+                    self.fail('missing original field %s' % ofield['name'])
+            # now check all of the extra fields from the version permutations
+            for v in range(1, 4):
+                fname = "fn_%s" % v
+                if fname not in master_fnames:
+                    self.fail('missing field %s' % fname)
+        finally:
+            # reset expose_force_register to its original value
+            APP.config.config.set(mode, 'expose_force_register', orig_val)
+
+
     def test_schema_anchoring(self):
         '''GET /tasr/subject/<subject>/master - as expected
         ---------------------------------------------------
