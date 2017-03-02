@@ -378,6 +378,13 @@ def recursive_master_schema(versions):
         return (0, None)
 
 
+def is_conflictok():
+    for qk in bottle.request.query.dict.keys():
+        if qk.strip().lower() == 'conflictok':
+            return True
+    return False
+
+
 @TASR_SUBJECT_APP.get('/<subject_name>/master')
 def subject_master_schema(subject_name=None):
     '''Get the MasterAvroSchema for all the versions.  This includes all of
@@ -405,7 +412,8 @@ def subject_master_schema(subject_name=None):
     # we might want to add a response header to indicate master depth
     if depth < len(versions):
         # master based on an incomplete set of versions
-        bottle.response.status = 409
+        if not is_conflictok():
+            bottle.response.status = 409
     else:
         # cache masters based on complete version sets
         asr.set_master_dict_entry(master_id, 'schema', mas_str)
