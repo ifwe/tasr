@@ -35,7 +35,7 @@ import sys
 import argparse
 import socket
 import logging
-from tasr.tasr_config import CONFIG
+from tasr.app.config import CONFIG
 from tasr.app import TASR_APP
 
 ENV = 'standard'

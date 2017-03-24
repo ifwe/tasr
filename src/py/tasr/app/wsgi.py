@@ -21,23 +21,27 @@ import bottle
 import json
 import logging
 import StringIO
-import tasr.tasr_config
 import re
+
+from bottle import BaseRequest, Bottle, FormsDict
+from tasr.app.config import CONFIG
+from tasr.headers import SubjectHeaderBot, SchemaHeaderBot
+from tasr.repository import AvroSchemaRepository
 
 TASR_VERSION = 2
 
 
-class TASRApp(bottle.Bottle):
+class TASRApp(Bottle):
     '''Wrap the Bottle object to keep track of the TASRConfig, ASR, and child
     apps mounted under the root.
     '''
-    def __init__(self, config=tasr.tasr_config.CONFIG):
+    def __init__(self, config=CONFIG):
         super(TASRApp, self).__init__()
         self.config = config
         self.mounted = dict()
         self.mounted_path = '/'
-        self.ASR = tasr.AvroSchemaRepository(host=config.redis_host,
-                                             port=config.redis_port)
+        self.ASR = AvroSchemaRepository(host=config.redis_host,
+                                        port=config.redis_port)
 
     def set_config_mode(self, mode):
         '''Sets the mode of the associated TASRConfig.  If the app has any
@@ -45,8 +49,8 @@ class TASRApp(bottle.Bottle):
         '''
         self.config.set_mode(mode)
         # update the ASR to ensure we're pointing at the right Redis
-        self.ASR = tasr.AvroSchemaRepository(host=self.config.redis_host,
-                                             port=self.config.redis_port)
+        self.ASR = AvroSchemaRepository(host=self.config.redis_host,
+                                        port=self.config.redis_port)
         # now update any submodule ASRs
         for (_, subapp) in self.mounted.iteritems():
             if isinstance(subapp, TASRApp):
@@ -65,24 +69,27 @@ class TASRApp(bottle.Bottle):
         HTML form. If a form is passed, multiple values per parameter are not
         allowed, with a 400 status code thrown when they occur.'''
         dct = dict()
-        if bottle.request.content_type is None:
+        req = BaseRequest(bottle.request)
+        if req.content_type is None:
             return dct
 
-        rctype = bottle.request.content_type
-        rcbod = bottle.request.body.getvalue()
-        if rcbod and tasr.app_wsgi.is_json_type(rctype):
+        rctype = req.content_type
+        if is_json_type(rctype):
             # if JSON is passed, try and extract the dict that way
             try:
-                json_body = bottle.request.body.getvalue()
-                dct = json.loads(json_body)
+                dct = req.json
             except ValueError:
                 self.abort(400, 'Invalid JSON')
-        elif rcbod and isinstance(rctype, basestring):
+        elif isinstance(rctype, basestring):
             ftypes = ['application/x-www-form-urlencoded',
                       'multipart/form-data']
             if rctype.lower() in ftypes:
-                for key in bottle.request.forms.keys():
-                    plist = bottle.request.forms.getall(key)
+                '''
+                You would think we could cast req.forms to a FormsDict and
+                still access the object as a MultiDict.  You would be wrong.
+                '''
+                for key in req.forms.dict.keys():
+                    plist = req.forms.dict[key]
                     if len(plist) > 1:
                         self.abort(400, 'Multiple vals for %s' % key)
                     if len(plist) == 1:
@@ -166,7 +173,7 @@ class TASRApp(bottle.Bottle):
         '''Returns a subject dict in JSON if JSON is accepted.  Standard
         subject headers.  If JSON is not accepted, returns an empty body.
         '''
-        bot = tasr.headers.SubjectHeaderBot(bottle.response, subject)
+        bot = SubjectHeaderBot(bottle.response, subject)
         bot.standard_headers()
         return self.object_response(None, subject.as_dict())
 
@@ -176,7 +183,7 @@ class TASRApp(bottle.Bottle):
         dict in the java.util.properties expected format (i.e. --
         "<key>:<value>\n" or "<key>=<value>\n").
         '''
-        bot = tasr.headers.SubjectHeaderBot(bottle.response, subject)
+        bot = SubjectHeaderBot(bottle.response, subject)
         bot.standard_headers()
         prop_list = []
         if subject.config:
@@ -189,7 +196,7 @@ class TASRApp(bottle.Bottle):
         Standard subject headers.  If JSON is not accepted, returns the
         value for the entry as a string.
         '''
-        bot = tasr.headers.SubjectHeaderBot(bottle.response, subject)
+        bot = SubjectHeaderBot(bottle.response, subject)
         bot.standard_headers()
         if subject.config and subject.config[key]:
             val = subject.config[key]
@@ -203,7 +210,7 @@ class TASRApp(bottle.Bottle):
         '''
         rctype = response_content_type(default_type='application/json')
         bottle.response.content_type = rctype
-        bot = tasr.headers.SchemaHeaderBot(bottle.response, reg_schema)
+        bot = SchemaHeaderBot(bottle.response, reg_schema)
         bot.standard_headers(subject_name=subject_name)
         return self.object_response(reg_schema.json_obj, None, rctype)
 
@@ -225,18 +232,23 @@ def log_request(code=200):
 
 
 def is_pretty():
-    for qk in bottle.request.query.dict.keys():
+    req_query = FormsDict(bottle.request.query)
+    for qk in req_query.keys():
         if qk.strip().lower() == 'pretty':
             return True
     return False
 
 
 def get_jsonp_callback():
-    for qk in bottle.request.query.dict.keys():
+    req_query = FormsDict(bottle.request.query)
+    for qk in req_query.keys():
         if qk.strip().lower() == 'callback':
-            if len(bottle.request.query.dict[qk]) > 0:
-                if len(bottle.request.query.dict[qk][0]) > 0:
-                    return bottle.request.query.dict[qk][0]
+            # it's a callback query
+            if len(req_query.getall(qk)) > 0:
+                # we have at least one entry 
+                if len(req_query.get(qk)) > 0:
+                    # the most recent callback value is not empty, so return it
+                    return req_query.get(qk)
     return None
 
 

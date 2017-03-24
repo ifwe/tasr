@@ -20,23 +20,24 @@ import json
 import re
 import requests
 import struct
-import tasr.app_core
-import tasr.app_wsgi
 import tasr.group
 import tasr.headers
 import tasr.registered_schema
+import tasr.app.collection_app
+
+from tasr.app.wsgi import TASRApp, is_json_type
 
 
 ##############################################################################
 # TASR Subject API endpoints -- mount to /tasr/subject
 ##############################################################################
-TASR_SUBJECT_APP = tasr.app_wsgi.TASRApp()
+SUBJECT_APP = TASRApp()
 
 
 def abort_if_value_bad(val, label='expected value'):
     '''Bail if val is None or an empty string.'''
     if val is None or val == '':
-        TASR_SUBJECT_APP.abort(400, 'Missing %s.' % label)
+        SUBJECT_APP.abort(400, 'Missing %s.' % label)
 
 
 def abort_if_subject_bad(val, label='subject name'):
@@ -44,33 +45,33 @@ def abort_if_subject_bad(val, label='subject name'):
     as well as being non-null.'''
     abort_if_value_bad(val, label)
     if not tasr.group.Group.validate_group_name(val):
-        TASR_SUBJECT_APP.abort(400, 'Bad %s: %s.' % (label, val))
+        SUBJECT_APP.abort(400, 'Bad %s: %s.' % (label, val))
 
 
 def abort_if_content_type_not_json():
     '''Many endpoints expect to receive JSON content.'''
     c_type = str(bottle.request.content_type).split(';')[0].strip()
-    if not tasr.app_wsgi.is_json_type(c_type):
-        TASR_SUBJECT_APP.abort(406, 'Content-Type not JSON.')
+    if not is_json_type(c_type):
+        SUBJECT_APP.abort(406, 'Content-Type not JSON.')
 
 
 def abort_if_body_empty():
     '''A common check for PUT and POST endpoints.'''
     bod = bottle.request.body.getvalue()
     if bod is None or bod == '':
-        TASR_SUBJECT_APP.abort(400, 'Expected a non-empty request body.')
+        SUBJECT_APP.abort(400, 'Expected a non-empty request body.')
 
 
 def get_subject(subject_name):
     '''Getting the subject object is common enough to be a method'''
     abort_if_subject_bad(subject_name)
-    subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
+    subject = SUBJECT_APP.ASR.lookup_group(subject_name)
     if not subject:
-        TASR_SUBJECT_APP.abort(404, 'No subject %s.' % subject_name)
+        SUBJECT_APP.abort(404, 'No subject %s.' % subject_name)
     return subject
 
 
-@TASR_SUBJECT_APP.get('/')
+@SUBJECT_APP.get('/')
 def all_subject_names():
     '''
     Get the list of all registered subjects, whether or not they have any
@@ -78,10 +79,10 @@ def all_subject_names():
     endpoint and is likely to be deprecated.  The core app method logs the
     request, so there is no need to do it here as well.
     '''
-    return tasr.app_core.all_subject_names()
+    return tasr.app.collection_app.all_subject_names()
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>')
+@SUBJECT_APP.get('/<subject_name>')
 def lookup_subject(subject_name=None):
     '''
     Get a subject (group) by name.  If an Accept header for application/json or
@@ -92,10 +93,10 @@ def lookup_subject(subject_name=None):
     case, including the version number, timestamp, md5_id and sha256_id for the
     subject's current schema (if there is one).
     '''
-    return TASR_SUBJECT_APP.subject_response(get_subject(subject_name))
+    return SUBJECT_APP.subject_response(get_subject(subject_name))
 
 
-@TASR_SUBJECT_APP.put('/<subject_name>')
+@SUBJECT_APP.put('/<subject_name>')
 def register_subject(subject_name=None):
     '''
     Register a subject (i.e. -- initialize a group).  S+V accepts a form as the
@@ -108,23 +109,23 @@ def register_subject(subject_name=None):
     existing one for the subject, a 409 (conflict) status will be returned.
     '''
     abort_if_subject_bad(subject_name)
-    config_dict = TASR_SUBJECT_APP.request_data_to_dict()
-    subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
+    config_dict = SUBJECT_APP.request_data_to_dict()
+    subject = SUBJECT_APP.ASR.lookup_group(subject_name)
     if subject:
         # subject already there, so check for conflicts
         diff_set = set(subject.config.keys()) ^ set(config_dict.keys())
         if len(diff_set) > 0:
             _msg = 'Conflict.  Mismatched keys: %s' % diff_set
-            TASR_SUBJECT_APP.abort(409, _msg)
+            SUBJECT_APP.abort(409, _msg)
         else:
             # keys are the same, so check values
             for k, v in subject.config.iteritems():
                 if not v == config_dict[k]:
                     _msg = ('Conflict.  Value mismatch for key %s (%s != %s)' %
                             (k, v, config_dict[k]))
-                    TASR_SUBJECT_APP.abort(409, _msg)
+                    SUBJECT_APP.abort(409, _msg)
         # no change, so do nothing and return a 200
-        return TASR_SUBJECT_APP.subject_response(subject)
+        return SUBJECT_APP.subject_response(subject)
     else:
         # subject is new, so register it -- config keys need "config." prefix
         # to be included in the metadata_dict for the constructor
@@ -132,29 +133,29 @@ def register_subject(subject_name=None):
         for key, val in config_dict.iteritems():
             ckey = 'config.%s' % key
             metadata_dict[ckey] = val
-        TASR_SUBJECT_APP.ASR.register_group(subject_name, metadata_dict)
-        subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
+        SUBJECT_APP.ASR.register_group(subject_name, metadata_dict)
+        subject = SUBJECT_APP.ASR.lookup_group(subject_name)
         if not subject:
-            TASR_SUBJECT_APP.abort(500, ('Failed to create subject %s.'
+            SUBJECT_APP.abort(500, ('Failed to create subject %s.'
                                          % subject_name))
         bottle.response.status = 201
-        return TASR_SUBJECT_APP.subject_response(subject)
+        return SUBJECT_APP.subject_response(subject)
 
 
-@TASR_SUBJECT_APP.delete('/<subject_name>')
+@SUBJECT_APP.delete('/<subject_name>')
 def delete_subject(subject_name=None):
     '''Deletes a subject, it's metadata, and all of its schema versions.
     Schemas that are versions of other subjects remain.'''
     abort_if_subject_bad(subject_name)
-    if not TASR_SUBJECT_APP.config.expose_delete:
-        TASR_SUBJECT_APP.abort(403, 'Subject deletes are not enabled.')
+    if not SUBJECT_APP.config.expose_delete:
+        SUBJECT_APP.abort(403, 'Subject deletes are not enabled.')
     try:
-        TASR_SUBJECT_APP.ASR.delete_group(subject_name)
+        SUBJECT_APP.ASR.delete_group(subject_name)
     except ValueError:
-        TASR_SUBJECT_APP.abort(404, 'No %s subject.' % subject_name)
+        SUBJECT_APP.abort(404, 'No %s subject.' % subject_name)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/config')
+@SUBJECT_APP.get('/<subject_name>/config')
 def subject_config(subject_name=None):
     '''
     Get the config map for the subject.  The headers contain the normal subject
@@ -163,10 +164,10 @@ def subject_config(subject_name=None):
     '''
     abort_if_subject_bad(subject_name)
     subject = get_subject(subject_name)
-    return TASR_SUBJECT_APP.subject_config_response(subject)
+    return SUBJECT_APP.subject_config_response(subject)
 
 
-@TASR_SUBJECT_APP.post('/<subject_name>/config')
+@SUBJECT_APP.post('/<subject_name>/config')
 def update_subject_config(subject_name=None):
     '''
     Replace the _whole_ config dict for a subject.  The config entries are a
@@ -175,49 +176,49 @@ def update_subject_config(subject_name=None):
     abort_if_subject_bad(subject_name)
     # figure out the dict to set
     config_dict = dict()
-    for key, val in TASR_SUBJECT_APP.request_data_to_dict().iteritems():
+    for key, val in SUBJECT_APP.request_data_to_dict().iteritems():
         ckey = 'config.%s' % key
         config_dict[ckey] = val
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     # clear out all old config entries first to avoid unexpected leftovers
     asr.delete_prefixed_group_metadata_entries(subject_name, 'config.')
     asr.set_group_metadata(subject_name, config_dict)
-    subject = TASR_SUBJECT_APP.ASR.lookup_group(subject_name)
-    return TASR_SUBJECT_APP.subject_config_response(subject)
+    subject = SUBJECT_APP.ASR.lookup_group(subject_name)
+    return SUBJECT_APP.subject_config_response(subject)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/config/<key>')
+@SUBJECT_APP.get('/<subject_name>/config/<key>')
 def get_subject_config_entry(subject_name=None, key=None):
     '''Get the value for the KEY in config dict for a subject.'''
     subject = get_subject(subject_name)
     if key not in subject.config:
-        TASR_SUBJECT_APP.abort(404, ('No %s in config for %s.' %
+        SUBJECT_APP.abort(404, ('No %s in config for %s.' %
                                      (key, subject_name)))
-    return TASR_SUBJECT_APP.subject_config_entry_response(subject, key)
+    return SUBJECT_APP.subject_config_entry_response(subject, key)
 
 
-@TASR_SUBJECT_APP.post('/<subject_name>/config/<key>')
+@SUBJECT_APP.post('/<subject_name>/config/<key>')
 def update_subject_config_entry(subject_name=None, key=None):
     '''Set or replace the value for the KEY in config dict for a subject.'''
     abort_if_subject_bad(subject_name)
     val = bottle.request.body.getvalue()
     ckey = 'config.%s' % key
-    TASR_SUBJECT_APP.ASR.set_group_metadata_entry(subject_name, ckey, val)
+    SUBJECT_APP.ASR.set_group_metadata_entry(subject_name, ckey, val)
     subject = get_subject(subject_name)
-    return TASR_SUBJECT_APP.subject_config_response(subject)
+    return SUBJECT_APP.subject_config_response(subject)
 
 
-@TASR_SUBJECT_APP.delete('/<subject_name>/config/<key>')
+@SUBJECT_APP.delete('/<subject_name>/config/<key>')
 def delete_subject_config_entry(subject_name=None, key=None):
     '''Remove the KEY in config dict for a subject.'''
     abort_if_subject_bad(subject_name)
     ckey = 'config.%s' % key
-    TASR_SUBJECT_APP.ASR.delete_group_metadata_entry(subject_name, ckey)
+    SUBJECT_APP.ASR.delete_group_metadata_entry(subject_name, ckey)
     subject = get_subject(subject_name)
-    return TASR_SUBJECT_APP.subject_config_response(subject)
+    return SUBJECT_APP.subject_config_response(subject)
 
 
-@TASR_SUBJECT_APP.put('/<subject_name>/anchor_id/<id_str:path>')
+@SUBJECT_APP.put('/<subject_name>/anchor_id/<id_str:path>')
 def set_subject_anchor_version(subject_name=None, id_str=None):
     '''Sets the specified ID string as the 'anchor' version for the subject.
     The anchor version, if set, is considered the starting version for purposes
@@ -233,13 +234,13 @@ def set_subject_anchor_version(subject_name=None, id_str=None):
     '''
     abort_if_subject_bad(subject_name)
     abort_if_value_bad(id_str, 'multi-type ID string')
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
 
     id_list = []
     for sha256_id in asr.get_all_version_sha256_ids_for_group(subject_name):
         id_list.append(sha256_id[3:])
     if id_str not in id_list:
-        TASR_SUBJECT_APP.abort(404, 'No %s version with ID %s' %
+        SUBJECT_APP.abort(404, 'No %s version with ID %s' %
                                (subject_name, id_str))
 
     # version is real, set the 'anchor' metadata value to the version ID
@@ -249,28 +250,28 @@ def set_subject_anchor_version(subject_name=None, id_str=None):
     idx = id_list.index(id_str)
     aschema = asr.get_schema_for_group_and_version(subject_name, idx)
     bottle.response.status = 201
-    return TASR_SUBJECT_APP.schema_response(aschema, subject_name)
+    return SUBJECT_APP.schema_response(aschema, subject_name)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/anchor_id')
+@SUBJECT_APP.get('/<subject_name>/anchor_id')
 def get_subject_anchor_version(subject_name=None):
     '''Returns an anchor version SHA ID if one has been set.  If no anchor
     version has been set, a 404 is returned.'''
     abort_if_subject_bad(subject_name)
-    smd = TASR_SUBJECT_APP.ASR.get_group_metadata(subject_name)
+    smd = SUBJECT_APP.ASR.get_group_metadata(subject_name)
     if 'anchor' not in smd:
-        TASR_SUBJECT_APP.abort(404, 'No anchor set for %s.' % subject_name)
+        SUBJECT_APP.abort(404, 'No anchor set for %s.' % subject_name)
     return smd['anchor']
 
 
-@TASR_SUBJECT_APP.delete('/<subject_name>/anchor_id')
+@SUBJECT_APP.delete('/<subject_name>/anchor_id')
 def unset_subject_anchor_version(subject_name=None):
     '''Deletes the 'anchor' group metadata entry along with any set value.'''
     abort_if_subject_bad(subject_name)
-    TASR_SUBJECT_APP.ASR.delete_group_metadata_entry(subject_name, 'anchor')
+    SUBJECT_APP.ASR.delete_group_metadata_entry(subject_name, 'anchor')
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/integral')
+@SUBJECT_APP.get('/<subject_name>/integral')
 def subject_integral(subject_name=None):
     '''
     Indicates whether subject ID strings are guaranteed to parse as integers.
@@ -280,10 +281,10 @@ def subject_integral(subject_name=None):
     subject = get_subject(subject_name)
     # not reused (or likely to be), so not broken out into a function
     tasr.headers.SubjectHeaderBot(bottle.response, subject).standard_headers()
-    return TASR_SUBJECT_APP.object_response(False)
+    return SUBJECT_APP.object_response(False)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/all_ids')
+@SUBJECT_APP.get('/<subject_name>/all_ids')
 def all_subject_ids(subject_name=None):
     '''For this subject, get the SHA256 IDs, in order, of all the registered
     schema versions.  Note that it is possible for a given ID to appear more
@@ -296,16 +297,16 @@ def all_subject_ids(subject_name=None):
     subject = get_subject(subject_name)
     hbot = tasr.headers.SubjectHeaderBot(bottle.response)
     hbot.standard_headers(subject)
-    tasr.app_wsgi.log_request(bottle.response.status_code)
-    asr = TASR_SUBJECT_APP.ASR
+    tasr.app.wsgi.log_request(bottle.response.status_code)
+    asr = SUBJECT_APP.ASR
     id_list = []
     for sha256_id in asr.get_all_version_sha256_ids_for_group(subject_name):
         hbot.add_subject_sha256_id_to_list(sha256_id[3:])
         id_list.append(sha256_id[3:])
-    return TASR_SUBJECT_APP.object_response(id_list)
+    return SUBJECT_APP.object_response(id_list)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/all_schemas')
+@SUBJECT_APP.get('/<subject_name>/all_schemas')
 def all_subject_schemas(subject_name=None):
     '''For this subject, get all the registered schema versions, in order, from
     first to last.  Note that it is possible for the same schema to appear more
@@ -317,23 +318,23 @@ def all_subject_schemas(subject_name=None):
     in all cases.
     '''
     subject = get_subject(subject_name)
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     hbot = tasr.headers.SubjectHeaderBot(bottle.response)
     hbot.standard_headers(subject)
-    tasr.app_wsgi.log_request(bottle.response.status_code)
+    tasr.app.wsgi.log_request(bottle.response.status_code)
 
     schema_list = []
     for schema in asr.get_latest_schema_versions_for_group(subject_name, -1):
         hbot.add_subject_sha256_id_to_list(schema.sha256_id)
         schema_list.append(schema.json)
-    return TASR_SUBJECT_APP.object_response(schema_list, None)
+    return SUBJECT_APP.object_response(schema_list, None)
 
 
 def get_anchored_version_list(subject_name):
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     olds = asr.get_latest_schema_versions_for_group(subject_name, -1)
     # if the group has an anchor version set, ignore prior versions
-    smd = TASR_SUBJECT_APP.ASR.get_group_metadata(subject_name)
+    smd = SUBJECT_APP.ASR.get_group_metadata(subject_name)
     if 'anchor' in smd:
         anchor_version = smd['anchor']
         anchored = False
@@ -385,7 +386,7 @@ def is_conflictok():
     return False
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/master')
+@SUBJECT_APP.get('/<subject_name>/master')
 def subject_master_schema(subject_name=None):
     '''Get the MasterAvroSchema for all the versions.  This includes all of
     the fields defined in any version for the group.  This can be used to
@@ -396,16 +397,16 @@ def subject_master_schema(subject_name=None):
     set, the master will include versions from the anchor forward.'''
     abort_if_subject_bad(subject_name)
     # first try the cached masters
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     master_id = get_master_sha256_id(subject_name)
     mas_d = asr.get_master_dict_for_sha256_id(master_id)
     if mas_d and 'schema' in mas_d:
-        return TASR_SUBJECT_APP.json_str_response(mas_d['schema'])
+        return SUBJECT_APP.json_str_response(mas_d['schema'])
 
     # with no cached master, create one
     versions = get_anchored_version_list(subject_name)
     if not versions or len(versions) == 0:
-        TASR_SUBJECT_APP.abort(404, ('No versions registered for %s.'
+        SUBJECT_APP.abort(404, ('No versions registered for %s.'
                                      % subject_name))
     (depth, mas) = recursive_master_schema(versions)
     mas_str = json.dumps(mas.json_obj)
@@ -417,7 +418,7 @@ def subject_master_schema(subject_name=None):
     else:
         # cache masters based on complete version sets
         asr.set_master_dict_entry(master_id, 'schema', mas_str)
-    return TASR_SUBJECT_APP.json_str_response(mas_str)
+    return SUBJECT_APP.json_str_response(mas_str)
 
 
 def is_back_compatible(subject_name, schema_str):
@@ -425,7 +426,7 @@ def is_back_compatible(subject_name, schema_str):
     compatible with all the previously registered schema versions (or those
     after the anchor version if one has been set).  This is used whenever we
     are considering registering a new schema version.'''
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     # instantiate a RAS object with the passed schema string
     unreg_schema = asr.instantiate_registered_schema()
     unreg_schema.schema_str = schema_str
@@ -442,9 +443,9 @@ def is_back_compatible(subject_name, schema_str):
 
 
 def update_hdfs_master(subject_name):
-    if not TASR_SUBJECT_APP.config.push_masters_to_hdfs:
+    if not SUBJECT_APP.config.push_masters_to_hdfs:
         return None
-    app = TASR_SUBJECT_APP
+    app = SUBJECT_APP
     versions = app.ASR.get_latest_schema_versions_for_group(subject_name, -1)
     mas = recursive_master_schema(versions)[1]
     normalized_subject_name = re.sub(r"^s_", "", subject_name)
@@ -482,21 +483,21 @@ def register_subject_schema(subject_name=None):
     abort_if_body_empty()
     try:
         schema_str = bottle.request.body.getvalue()
-        asr = TASR_SUBJECT_APP.ASR
+        asr = SUBJECT_APP.ASR
         reg_schema = asr.register_schema(subject_name, schema_str)
         if not reg_schema or not reg_schema.is_valid:
-            TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
+            SUBJECT_APP.abort(400, 'Invalid schema.')
         if reg_schema.created:
             bottle.response.status = 201
             update_hdfs_master(subject_name)
-        return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
+        return SUBJECT_APP.schema_response(reg_schema, subject_name)
     except avro.schema.SchemaParseException:
-        TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
+        SUBJECT_APP.abort(400, 'Invalid schema.')
     except ValueError:
-        TASR_SUBJECT_APP.abort(400, 'Invalid schema.')
+        SUBJECT_APP.abort(400, 'Invalid schema.')
 
 
-@TASR_SUBJECT_APP.put('/<subject_name>/register')
+@SUBJECT_APP.put('/<subject_name>/register')
 def register_compatible_subject_schema(subject_name=None):
     '''A method to register a back-compatible schema for a specified group.
     This will reject the request on a 409 if the fields are not a valid
@@ -510,35 +511,35 @@ def register_compatible_subject_schema(subject_name=None):
     try:
         if not is_back_compatible(subject_name, schema_str):
             _msg = 'Schema not compatible with previous versions.'
-            TASR_SUBJECT_APP.abort(409, _msg)
+            SUBJECT_APP.abort(409, _msg)
     except ValueError as verr:
         _msg = verr.message if verr.message else 'Incompatible schema.'
-        TASR_SUBJECT_APP.abort(409, _msg)
+        SUBJECT_APP.abort(409, _msg)
     # the new schema is valid and compatible, so register it
     return register_subject_schema(subject_name)
 
 
-@TASR_SUBJECT_APP.put('/<subject_name>/force_register')
+@SUBJECT_APP.put('/<subject_name>/force_register')
 def force_register_subject_schema(subject_name=None):
-    if not TASR_SUBJECT_APP.config.expose_force_register:
-        TASR_SUBJECT_APP.abort(403, 'Forced schema registration not enabled.')
+    if not SUBJECT_APP.config.expose_force_register:
+        SUBJECT_APP.abort(403, 'Forced schema registration not enabled.')
     return register_subject_schema(subject_name)
 
 
-@TASR_SUBJECT_APP.put('/<subject_name>/register_if_latest/<version>')
+@SUBJECT_APP.put('/<subject_name>/register_if_latest/<version>')
 def register_schema_if_latest(subject_name=None, version=None):
     '''If the version is the latest for the subject, then register the schema
     passed as the content body.
     '''
     abort_if_value_bad(version, 'version')
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     latest_schema = asr.get_latest_schema_for_group(subject_name)
     if int(version) != latest_schema.current_version(subject_name):
-        TASR_SUBJECT_APP.abort(409, '%s not latest.' % version)
+        SUBJECT_APP.abort(409, '%s not latest.' % version)
     return register_subject_schema(subject_name)
 
 
-@TASR_SUBJECT_APP.post('/<subject_name>/schema')
+@SUBJECT_APP.post('/<subject_name>/schema')
 def lookup_by_schema_str(subject_name=None):
     '''Retrieves the registered schema for the schema string as posted. The S+V
     API specifies a topic (a.k.a -- a subject), which is mostly superfluous for
@@ -552,10 +553,10 @@ def lookup_by_schema_str(subject_name=None):
     abort_if_body_empty()
     try:
         schema_str = bottle.request.body.getvalue()
-        asr = TASR_SUBJECT_APP.ASR
+        asr = SUBJECT_APP.ASR
         reg_schema = asr.get_schema_for_schema_str(schema_str)
         if reg_schema and subject_name in reg_schema.group_names:
-            return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
+            return SUBJECT_APP.schema_response(reg_schema, subject_name)
 
         # check that schema has all required fields for back-compat -- if not,
         # the raised exception will abort on a 400 right away
@@ -566,10 +567,10 @@ def lookup_by_schema_str(subject_name=None):
         try:
             if not is_back_compatible(subject_name, schema_str):
                 _msg = 'Schema not compatible with previous versions.'
-                TASR_SUBJECT_APP.abort(409, _msg)
+                SUBJECT_APP.abort(409, _msg)
         except ValueError as verr:
             _msg = verr.message if verr.message else 'Incompatible schema.'
-            TASR_SUBJECT_APP.abort(409, _msg)
+            SUBJECT_APP.abort(409, _msg)
 
         # For unregistered schemas, the status is a 404 and the return body is
         # empty, but we add the headers with the MD5 and SHA256 IDs so the
@@ -580,22 +581,22 @@ def lookup_by_schema_str(subject_name=None):
         bottle.response.status = 404
         # TODO: should we return an object with the IDs here if JSON accepted?
     except avro.schema.SchemaParseException:
-        TASR_SUBJECT_APP.abort(400, 'Invalid schema.  Failed to consider.')
+        SUBJECT_APP.abort(400, 'Invalid schema.  Failed to consider.')
     except ValueError:
-        TASR_SUBJECT_APP.abort(400, 'Invalid schema.  Failed to consider.')
+        SUBJECT_APP.abort(400, 'Invalid schema.  Failed to consider.')
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/version/<version>')
+@SUBJECT_APP.get('/<subject_name>/version/<version>')
 def lookup_by_subject_and_version(subject_name=None, version=None):
     '''Retrieves the registered schema for the specified group_name with the
     specified version number.  Note that versions count from 1, not 0.
     '''
     abort_if_subject_bad(subject_name)
     abort_if_value_bad(version, 'version')
-    asr = TASR_SUBJECT_APP.ASR
+    asr = SUBJECT_APP.ASR
     reg_schema = asr.get_schema_for_group_and_version(subject_name, version)
     if not reg_schema:
-        TASR_SUBJECT_APP.abort(404, ('No version %s registered for subject %s.'
+        SUBJECT_APP.abort(404, ('No version %s registered for subject %s.'
                                      % (version, subject_name)))
     '''With multiple schema versions for a group, only the latest is
     included in the retrieved RS.  If we asked for a particular schema
@@ -604,32 +605,32 @@ def lookup_by_subject_and_version(subject_name=None, version=None):
     here to be the expected one.
     '''
     reg_schema.gv_dict[subject_name] = version
-    return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
+    return SUBJECT_APP.schema_response(reg_schema, subject_name)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/id/<id_str:path>')
+@SUBJECT_APP.get('/<subject_name>/id/<id_str:path>')
 def lookup_by_subject_and_id_str(subject_name=None, id_str=None):
     '''Retrieves the latest version of a schema registered for the specified
     group_name having the provided multi-type ID.
     '''
     abort_if_subject_bad(subject_name)
     abort_if_value_bad(id_str, 'multi-type ID string')
-    reg_schema = TASR_SUBJECT_APP.ASR.get_schema_for_id_str(id_str)
+    reg_schema = SUBJECT_APP.ASR.get_schema_for_id_str(id_str)
     if not reg_schema:
         msg = ('No schema with a multi-type ID %s registered for subject %s.' %
                (id_str, subject_name))
-        TASR_SUBJECT_APP.abort(404, msg)
-    return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
+        SUBJECT_APP.abort(404, msg)
+    return SUBJECT_APP.schema_response(reg_schema, subject_name)
 
 
-@TASR_SUBJECT_APP.get('/<subject_name>/latest')
+@SUBJECT_APP.get('/<subject_name>/latest')
 def lookup_latest(subject_name=None):
     '''Retrieves the registered schema for the specified group with the highest
     version number.
     '''
     abort_if_subject_bad(subject_name)
-    reg_schema = TASR_SUBJECT_APP.ASR.get_latest_schema_for_group(subject_name)
+    reg_schema = SUBJECT_APP.ASR.get_latest_schema_for_group(subject_name)
     if not reg_schema:
         msg = 'No schema registered for subject %s.' % subject_name
-        TASR_SUBJECT_APP.abort(404, msg)
-    return TASR_SUBJECT_APP.schema_response(reg_schema, subject_name)
+        SUBJECT_APP.abort(404, msg)
+    return SUBJECT_APP.schema_response(reg_schema, subject_name)

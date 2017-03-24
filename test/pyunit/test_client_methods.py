@@ -4,12 +4,29 @@ Created on May 7, 2014
 @author: cmills
 '''
 
+from tasr.registered_schema import RegisteredAvroSchema
 from client_test import TestTASRAppClient
 
 import unittest
-import tasr.client
 import httmock
 
+from tasr.utils.client import (get_active_subject_names,
+                               get_all_subject_names,
+                               get_all_subject_schema_ids,
+                               get_all_subject_schemas,
+                               get_subject_config,
+                               is_subject_integral,
+                               lookup_by_id_str,
+                               lookup_latest,
+                               lookup_by_schema_str,
+                               lookup_by_version,
+                               lookup_subject,
+                               register_schema,
+                               register_schema_if_latest,
+                               register_subject,
+                               update_subject_config,
+                               TASRError
+                               )
 
 class TestTASRClientMethods(TestTASRAppClient):
 
@@ -32,9 +49,9 @@ class TestTASRClientMethods(TestTASRAppClient):
     def bare_register_subject_skeleton(self, config_dict=None):
         '''register_subject() - skeleton test'''
         with httmock.HTTMock(self.route_to_testapp):
-            meta = tasr.client.register_subject(self.event_type,
-                                                   config_dict,
-                                                   self.host, self.port)
+            meta = register_subject(self.event_type,
+                                    config_dict,
+                                    self.host, self.port)
             self.assertIn(self.event_type, meta.name, 'Bad subject name.')
             return meta
 
@@ -42,12 +59,11 @@ class TestTASRClientMethods(TestTASRAppClient):
         '''register_schema_for_topic() - skeleton test'''
         # whitespace gets normalized, so do that locally to the submitted
         # schema string so we have an accurate target for comparison
-        ras = tasr.registered_schema.RegisteredAvroSchema()
+        ras = RegisteredAvroSchema()
         ras.schema_str = schema_str
         canonical_schema_str = ras.json
         with httmock.HTTMock(self.route_to_testapp):
-            func = tasr.client.register_schema
-            rs = func(self.event_type, schema_str, self.host, self.port)
+            rs = register_schema(self.event_type, schema_str, self.host, self.port)
             self.assertEqual(canonical_schema_str, rs.schema_str,
                              'Schema string modified!')
             self.assertIn(self.event_type, rs.group_names,
@@ -67,25 +83,25 @@ class TestTASRClientMethods(TestTASRAppClient):
         '''lookup_subject() - as expected, should return True'''
         self.bare_register_subject_skeleton()
         with httmock.HTTMock(self.route_to_testapp):
-            self.assertTrue(tasr.client.lookup_subject(self.event_type,
-                                                          self.host,
-                                                          self.port))
+            self.assertTrue(lookup_subject(self.event_type,
+                                           self.host,
+                                           self.port))
 
     def test_bare_lookup_missing_subject(self):
         '''lookup_subject() - no such subject, should return False'''
         with httmock.HTTMock(self.route_to_testapp):
-            self.assertFalse(tasr.client.lookup_subject(self.event_type,
-                                                           self.host,
-                                                           self.port))
+            self.assertFalse(lookup_subject(self.event_type,
+                                            self.host,
+                                            self.port))
 
     def test_bare_get_subject_config(self):
         '''get_subject_config() - as expected'''
         test_config = {'bob': 'alice'}
         self.bare_register_subject_skeleton(test_config)
         with httmock.HTTMock(self.route_to_testapp):
-            config_dict = tasr.client.get_subject_config(self.event_type,
-                                                            self.host,
-                                                            self.port)
+            config_dict = get_subject_config(self.event_type,
+                                             self.host,
+                                             self.port)
             self.assertDictEqual(test_config, config_dict, 'bad config dict')
 
     def test_bare_update_subject_config(self):
@@ -94,19 +110,19 @@ class TestTASRClientMethods(TestTASRAppClient):
         self.bare_register_subject_skeleton(test_config)
         with httmock.HTTMock(self.route_to_testapp):
             update_config = {'bob': 'cynthia', 'doris': 'eve'}
-            config_dict = tasr.client.update_subject_config(self.event_type,
-                                                               update_config,
-                                                               self.host,
-                                                               self.port)
+            config_dict = update_subject_config(self.event_type,
+                                                update_config,
+                                                self.host,
+                                                self.port)
             self.assertDictEqual(update_config, config_dict, 'bad config dict')
 
     def test_bare_is_subject_integral(self):
         '''is_subject_integral() - as expected'''
         self.bare_register_subject_skeleton()
         with httmock.HTTMock(self.route_to_testapp):
-            is_int = tasr.client.is_subject_integral(self.event_type,
-                                                        self.host,
-                                                        self.port)
+            is_int = is_subject_integral(self.event_type,
+                                         self.host,
+                                         self.port)
             self.assertFalse(is_int)
 
     def test_bare_get_get_active_subject_names_with_none_and_one_present(self):
@@ -114,15 +130,13 @@ class TestTASRClientMethods(TestTASRAppClient):
         self.bare_register_subject_skeleton()
         # without a schema, the subject is not active
         with httmock.HTTMock(self.route_to_testapp):
-            subject_names = tasr.client.get_active_subject_names(self.host,
-                                                                    self.port)
+            subject_names = get_active_subject_names(self.host, self.port)
             self.assertEqual(0, len(subject_names), 'expected no subjects')
 
         # now reg a schema and try again
         self.bare_register_schema_skeleton(self.schema_str)
         with httmock.HTTMock(self.route_to_testapp):
-            subject_names = tasr.client.get_active_subject_names(self.host,
-                                                                    self.port)
+            subject_names = get_active_subject_names(self.host, self.port)
             self.assertListEqual(subject_names, [self.event_type, ],
                                  'unexpected groups: %s' % subject_names)
 
@@ -130,16 +144,14 @@ class TestTASRClientMethods(TestTASRAppClient):
         '''get_all_subject_names() - as expected'''
         self.bare_register_subject_skeleton()
         with httmock.HTTMock(self.route_to_testapp):
-            subject_names = tasr.client.get_all_subject_names(self.host,
-                                                                 self.port)
+            subject_names = get_all_subject_names(self.host, self.port)
             self.assertListEqual(subject_names, [self.event_type, ],
                                  'unexpected groups: %s' % subject_names)
 
     def test_bare_get_get_all_subject_names_with_none_present(self):
         '''get_all_subject_names() - checking an empty list doesn't blow up'''
         with httmock.HTTMock(self.route_to_testapp):
-            subject_names = tasr.client.get_all_subject_names(self.host,
-                                                                 self.port)
+            subject_names = get_all_subject_names(self.host, self.port)
             self.assertEqual(0, len(subject_names), 'expected no subjects')
 
     def test_bare_get_all_subject_schema_ids(self):
@@ -153,7 +165,7 @@ class TestTASRClientMethods(TestTASRAppClient):
                 # whitespace gets normalized, so do that locally to the
                 # submitted schema string so we have an accurate target for
                 # comparison
-                ras = tasr.registered_schema.RegisteredAvroSchema()
+                ras = RegisteredAvroSchema()
                 ras.schema_str = ver_schema_str
                 canonical_ver_schema_str = ras.json
                 schemas.append(canonical_ver_schema_str)
@@ -168,9 +180,9 @@ class TestTASRClientMethods(TestTASRAppClient):
                 sha256_ids.append(rs.sha256_id)
 
             # now pull the ID list and check it matches
-            ids = tasr.client.get_all_subject_schema_ids(self.event_type,
-                                                            self.host,
-                                                            self.port)
+            ids = get_all_subject_schema_ids(self.event_type,
+                                             self.host,
+                                             self.port)
             self.assertListEqual(sha256_ids, ids, 'ID list mismatch')
 
     def test_bare_get_all_subject_schemas(self):
@@ -183,7 +195,7 @@ class TestTASRClientMethods(TestTASRAppClient):
                 # whitespace gets normalized, so do that locally to the
                 # submitted schema string so we have an accurate target for
                 # comparison
-                ras = tasr.registered_schema.RegisteredAvroSchema()
+                ras = RegisteredAvroSchema()
                 ras.schema_str = ver_schema_str
                 canonical_ver_schema_str = ras.json
                 test_schema_strs.append(canonical_ver_schema_str)
@@ -197,9 +209,9 @@ class TestTASRClientMethods(TestTASRAppClient):
                                  'SHA256 ID mismatch')
 
             # now pull the schema list and check it matches
-            schemas = tasr.client.get_all_subject_schemas(self.event_type,
-                                                             self.host,
-                                                             self.port)
+            schemas = get_all_subject_schemas(self.event_type,
+                                              self.host,
+                                              self.port)
             for v in range(1, 50):
                 reg_schema = schemas[v - 1]
                 test_schema_str = test_schema_strs[v - 1]
@@ -218,7 +230,7 @@ class TestTASRClientMethods(TestTASRAppClient):
         try:
             self.bare_register_schema_skeleton(None)
             self.fail('should have thrown a TASRError')
-        except tasr.client.TASRError as te:
+        except TASRError as te:
             self.assertTrue(te, 'Missing TASRError')
 
     def test_bare_reg_fail_on_invalid_schema(self):
@@ -227,7 +239,7 @@ class TestTASRClientMethods(TestTASRAppClient):
             bad_schema = '%s }' % self.schema_str
             self.bare_register_schema_skeleton(bad_schema)
             self.fail('should have thrown a ValueError')
-        except tasr.client.TASRError as te:
+        except TASRError as te:
             self.fail('should have thrown a ValueError')
         except ValueError:
             pass
@@ -244,11 +256,11 @@ class TestTASRClientMethods(TestTASRAppClient):
         with httmock.HTTMock(self.route_to_testapp):
             alt_schema_str = self.get_schema_permutation(self.schema_str)
             cur_latest_ver = 1
-            rs = tasr.client.register_schema_if_latest(self.event_type,
-                                                          cur_latest_ver,
-                                                          alt_schema_str,
-                                                          self.host,
-                                                          self.port)
+            rs = register_schema_if_latest(self.event_type,
+                                           cur_latest_ver,
+                                           alt_schema_str,
+                                           self.host,
+                                           self.port)
             self.assertEqual(rs.current_version(self.event_type), 2, 'bad ver')
 
     def test_bare_fail_register_schema_if_latest_stale_version(self):
@@ -260,13 +272,13 @@ class TestTASRClientMethods(TestTASRAppClient):
         with httmock.HTTMock(self.route_to_testapp):
             old_ver = 1
             try:
-                tasr.client.register_schema_if_latest(self.event_type,
-                                                         old_ver,
-                                                         self.schema_str,
-                                                         self.host,
-                                                         self.port)
+                register_schema_if_latest(self.event_type,
+                                          old_ver,
+                                          self.schema_str,
+                                          self.host,
+                                          self.port)
                 self.fail('expected a TASRError')
-            except tasr.client.TASRError as te:
+            except TASRError as te:
                 self.assertTrue(te, 'Missing TASRError')
 
     def test_bare_fail_register_schema_if_latest_bad_version(self):
@@ -277,13 +289,13 @@ class TestTASRClientMethods(TestTASRAppClient):
             alt_schema_str = self.get_schema_permutation(self.schema_str)
             bad_ver = 2
             try:
-                tasr.client.register_schema_if_latest(self.event_type,
-                                                         bad_ver,
-                                                         alt_schema_str,
-                                                         self.host,
-                                                         self.port)
+                register_schema_if_latest(self.event_type,
+                                          bad_ver,
+                                          alt_schema_str,
+                                          self.host,
+                                          self.port)
                 self.fail('expected a TASRError')
-            except tasr.client.TASRError as te:
+            except TASRError as te:
                 self.assertTrue(te, 'Missing TASRError')
 
     ########################################################################
@@ -293,15 +305,15 @@ class TestTASRClientMethods(TestTASRAppClient):
         '''lookup_by_schema_str() - as expected'''
         reg_rs = self.bare_register_schema_skeleton(self.schema_str)
         with httmock.HTTMock(self.route_to_testapp):
-            func = tasr.client.lookup_by_schema_str
-            ret_rs = func(self.event_type, reg_rs.json, self.host, self.port)
+            ret_rs = lookup_by_schema_str(self.event_type, reg_rs.json,
+                                          self.host, self.port)
             self.assertEqual(reg_rs.sha256_id, ret_rs.sha256_id, 'ID mismatch')
 
     def bare_get_for_subject_skeleton(self, subject_name, version):
         '''lookup_by_version() - util method'''
         with httmock.HTTMock(self.route_to_testapp):
-            func = tasr.client.lookup_by_version
-            return func(subject_name, version, self.host, self.port)
+            return lookup_by_version(subject_name, version,
+                                     self.host, self.port)
 
     def test_bare_fail_lookup_by_version_bad_version(self):
         '''lookup_by_version() - bad version'''
@@ -310,7 +322,7 @@ class TestTASRClientMethods(TestTASRAppClient):
         try:
             self.bare_get_for_subject_skeleton(self.schema_str, bad_ver)
             self.fail('Should have thrown an TASRError')
-        except tasr.client.TASRError as te:
+        except TASRError as te:
             self.assertTrue(te, 'Missing TASRError')
 
     def test_bare_lookup_by_version(self):
@@ -321,7 +333,7 @@ class TestTASRClientMethods(TestTASRAppClient):
                                                          "f_%s" % v)
             # whitespace gets normalized, so do that locally to the submitted
             # schema string so we have an accurate target for comparison
-            ras = tasr.registered_schema.RegisteredAvroSchema()
+            ras = RegisteredAvroSchema()
             ras.schema_str = ver_schema_str
             canonical_ver_schema_str = ras.json
             schemas.append(canonical_ver_schema_str)
@@ -361,7 +373,7 @@ class TestTASRClientMethods(TestTASRAppClient):
                                                          "fn_%s" % v)
             # whitespace gets normalized, so do that locally to the submitted
             # schema string so we have an accurate target for comparison
-            ras = tasr.registered_schema.RegisteredAvroSchema()
+            ras = RegisteredAvroSchema()
             ras.schema_str = ver_schema_str
             canonical_ver_schema_str = ras.json
             schemas.append(canonical_ver_schema_str)
@@ -379,13 +391,13 @@ class TestTASRClientMethods(TestTASRAppClient):
                 sha256_id = sha256_ids[v - 1]
                 schema_str = schemas[v - 1]
                 try:
-                    rs = tasr.client.lookup_by_id_str(self.event_type,
-                                                         sha256_id,
-                                                         self.host,
-                                                         self.port)
+                    rs = lookup_by_id_str(self.event_type,
+                                          sha256_id,
+                                          self.host,
+                                          self.port)
                     self.assertEqual(schema_str, rs.json,
                                      'schema string mismatch')
-                except tasr.client.TASRError as terr:
+                except TASRError as terr:
                     print terr
 
     def test_bare_lookup_latest(self):
@@ -394,9 +406,9 @@ class TestTASRClientMethods(TestTASRAppClient):
         self.bare_register_schema_skeleton(alt_schema_str)
         # so cur ver is now 2
         with httmock.HTTMock(self.route_to_testapp):
-            rs = tasr.client.lookup_latest(self.event_type,
-                                              self.host,
-                                              self.port)
+            rs = lookup_latest(self.event_type,
+                               self.host,
+                               self.port)
             self.assertEqual(2, rs.current_version(self.event_type), 'bad ver')
 
 if __name__ == "__main__":

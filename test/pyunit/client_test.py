@@ -5,8 +5,8 @@ Created on May 7, 2014
 '''
 
 from tasr_test import TASRTestCase
+from tasr.app import TASR_APP
 
-import tasr.app
 import requests
 import logging
 from requests.packages.urllib3._collections import HTTPHeaderDict
@@ -14,7 +14,7 @@ from requests.packages.urllib3.response import HTTPResponse
 import httmock
 from webtest import TestApp, TestRequest
 
-APP = tasr.app.TASR_APP
+APP = TASR_APP
 APP.set_config_mode('local')
 HOST_PORT = r'%s:%s' % (APP.config.host, APP.config.port)
 

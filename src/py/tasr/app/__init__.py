@@ -31,17 +31,21 @@ Our default settings look like this:
 
 For running the app in standalone mode, please see the app_standalone module.
 '''
-import tasr.app_wsgi
-from tasr.app_core import TASR_COLLECTION_APP, TASR_ID_APP, TASR_SCHEMA_APP
-from tasr.app_subject import TASR_SUBJECT_APP
-from tasr.app_redshift import TASR_REDSHIFT_APP
+from tasr.app.wsgi import TASRApp
+from tasr.app.collection_app import COLLECTION_APP
+from tasr.app.id_app import ID_APP
+from tasr.app.schema_app import SCHEMA_APP
+from tasr.app.subject_app import SUBJECT_APP
+from tasr.app.redshift_app import REDSHIFT_APP
 
 
-TASR_APP = tasr.app_wsgi.TASRApp()
+TASR_APP = TASRApp()
+# core endpoints are non-colliding, so just mount them
+TASR_APP.mount('/tasr/collection', COLLECTION_APP)
+TASR_APP.mount('/tasr/id', ID_APP)
+TASR_APP.mount('/tasr/schema', SCHEMA_APP)
 
-TASR_APP.mount('/tasr/collection', TASR_COLLECTION_APP)
-TASR_APP.mount('/tasr/id', TASR_ID_APP)
-TASR_APP.mount('/tasr/schema', TASR_SCHEMA_APP)
-# the RS endpoints are extensions to the subject endpoints
-TASR_SUBJECT_APP.merge(TASR_REDSHIFT_APP)
-TASR_APP.mount('/tasr/subject', TASR_SUBJECT_APP)
+# the RS endpoints are extensions to the subject endpoints, so merge them in
+# then mount the merged application
+SUBJECT_APP.merge(REDSHIFT_APP)
+TASR_APP.mount('/tasr/subject', SUBJECT_APP)

@@ -11,10 +11,10 @@ registering subjects "bare" -- that is, without a schema.  The "bare" subjects
 are included in lists of "all" subjects, but are excluded from lists of
 "active" subjects.
 '''
-from tasr.app_core import TASR_COLLECTION_APP, subject_list_response
-from tasr.app_wsgi import is_json_type
-from tasr.app_subject import (get_subject, get_anchored_version_list,
-                              get_master_sha256_id, abort_if_subject_bad)
+from tasr.app.collection_app import COLLECTION_APP, subject_list_response
+from tasr.app.wsgi import TASRApp, is_json_type
+from tasr.app.subject_app import (get_subject, get_anchored_version_list,
+                                  get_master_sha256_id, abort_if_subject_bad)
 import bottle
 import json
 import tasr.redshift
@@ -23,14 +23,14 @@ import tasr.redshift
 ##############################################################################
 # TASR Subject API endpoints -- mount to /tasr/subject
 ##############################################################################
-TASR_REDSHIFT_APP = tasr.app_wsgi.TASRApp()
+REDSHIFT_APP = TASRApp()
 
 
 def get_redshift_master(subject_name):
     abort_if_subject_bad(subject_name)
     versions = get_anchored_version_list(subject_name)
     if not versions or len(versions) == 0:
-        TASR_REDSHIFT_APP.abort(404, ('No versions for %s.' % subject_name))
+        REDSHIFT_APP.abort(404, ('No versions for %s.' % subject_name))
     return tasr.redshift.RedshiftMasterAvroSchema(versions)
 
 
@@ -38,7 +38,7 @@ def get_redshift_master_dict(subject_name):
     abort_if_subject_bad(subject_name)
     # first try for a cached redshift master
     master_id = get_master_sha256_id(subject_name)
-    asr = TASR_REDSHIFT_APP.ASR
+    asr = REDSHIFT_APP.ASR
     mas_d = asr.get_master_dict_for_sha256_id(master_id)
     if mas_d and ('rs_schema' in mas_d and 'rs_create' in mas_d and
                   'rs_create_staging' in mas_d and
@@ -53,7 +53,7 @@ def get_redshift_master_dict(subject_name):
     mas_d['rs_create'] = rmas.rs_ddl_create(subject)
     mas_d['rs_create_staging'] = rmas.rs_ddl_create_staging(subject)
     mas_d['rs_insert_from_staging'] = rmas.rs_dml_insert_from_staging(subject)
-    TASR_REDSHIFT_APP.ASR.update_master_dict(rmas.sha256_id, mas_d)
+    REDSHIFT_APP.ASR.update_master_dict(rmas.sha256_id, mas_d)
     return mas_d
 
 
@@ -65,20 +65,20 @@ def is_redshift_enabled(subject):
     return enabled
 
 
-@TASR_COLLECTION_APP.get('/subjects/redshift')
+@COLLECTION_APP.get('/subjects/redshift')
 def redshift_subject_names():
     rs_subjects = []
-    for sub in TASR_COLLECTION_APP.ASR.get_active_groups():
+    for sub in COLLECTION_APP.ASR.get_active_groups():
         if 'redshift.enabled' in sub.config:
             if sub.config['redshift.enabled'] == 'true':
                 rs_subjects.append(sub)
     return subject_list_response(rs_subjects)
 
 
-@TASR_COLLECTION_APP.get('/subjects/redshift/freq/hourly')
+@COLLECTION_APP.get('/subjects/redshift/freq/hourly')
 def redshift_hourly_subject_names():
     rs_subjects = []
-    for sub in TASR_COLLECTION_APP.ASR.get_active_groups():
+    for sub in COLLECTION_APP.ASR.get_active_groups():
         if 'redshift.enabled' in sub.config:
             if sub.config['redshift.enabled'] == 'true':
                 if 'redshift.frequency' in sub.config:
@@ -87,10 +87,10 @@ def redshift_hourly_subject_names():
     return subject_list_response(rs_subjects)
 
 
-@TASR_COLLECTION_APP.get('/subjects/redshift/freq/daily')
+@COLLECTION_APP.get('/subjects/redshift/freq/daily')
 def redshift_daily_subject_names():
     rs_subjects = []
-    for sub in TASR_COLLECTION_APP.ASR.get_active_groups():
+    for sub in COLLECTION_APP.ASR.get_active_groups():
         if 'redshift.enabled' in sub.config:
             if sub.config['redshift.enabled'] == 'true':
                 if 'redshift.frequency' in sub.config:
@@ -99,7 +99,7 @@ def redshift_daily_subject_names():
     return subject_list_response(rs_subjects)
 
 
-@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/master')
+@REDSHIFT_APP.get('/<subject_name>/redshift/master')
 def subject_redshift_master_schema(subject_name=None):
     '''Get the RedShift-compatible version of the master subject schema.  The
     RedShift version strips the event type prefix from the event-specific
@@ -107,7 +107,7 @@ def subject_redshift_master_schema(subject_name=None):
     removes any other complex types (e.g. -- meta__handlers).  The namespace
     shifts to tagged.events.redshift.
     '''
-    app = TASR_REDSHIFT_APP
+    app = REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
@@ -115,12 +115,12 @@ def subject_redshift_master_schema(subject_name=None):
     return app.json_str_response(rmas_d['rs_schema'])
 
 
-@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_create')
+@REDSHIFT_APP.get('/<subject_name>/redshift/dml_create')
 def subject_redshift_dml_create(subject_name=None):
     return subject_redshift_ddl_create(subject_name)
 
 
-@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/ddl_create')
+@REDSHIFT_APP.get('/<subject_name>/redshift/ddl_create')
 def subject_redshift_ddl_create(subject_name=None):
     '''Get the RedShift-compatible version of the master subject schema.  The
     RedShift version strips the event type prefix from the event-specific
@@ -128,7 +128,7 @@ def subject_redshift_ddl_create(subject_name=None):
     removes any other complex types (e.g. -- meta__handlers).  The namespace
     shifts to tagged.events.redshift.
     '''
-    app = TASR_REDSHIFT_APP
+    app = REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
@@ -136,14 +136,14 @@ def subject_redshift_ddl_create(subject_name=None):
     return app.object_response(rmas_d['rs_create'], None, 'text/plain')
 
 
-@TASR_REDSHIFT_APP.post('/<subject_name>/redshift/dml_alter')
+@REDSHIFT_APP.post('/<subject_name>/redshift/dml_alter')
 def subject_redshift_dml_alter(subject_name=None):
     return subject_redshift_ddl_alter(subject_name)
 
 
-@TASR_REDSHIFT_APP.post('/<subject_name>/redshift/ddl_alter')
+@REDSHIFT_APP.post('/<subject_name>/redshift/ddl_alter')
 def subject_redshift_ddl_alter(subject_name=None):
-    app = TASR_REDSHIFT_APP
+    app = REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
@@ -171,14 +171,14 @@ def subject_redshift_ddl_alter(subject_name=None):
                                None, 'text/plain')
 
 
-@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/ddl_create_staging')
+@REDSHIFT_APP.get('/<subject_name>/redshift/ddl_create_staging')
 def subject_redshift_ddl_create_staging(subject_name=None):
     '''Get the DDL statement to CREATE a staging table in RS.  The staging
     table has the same field names as we have in our cluster (Hive, Spark),
     and timestamps are bigint values measuring ms since the epoch -- not
     timestamp values.
     '''
-    app = TASR_REDSHIFT_APP
+    app = REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
@@ -186,12 +186,12 @@ def subject_redshift_ddl_create_staging(subject_name=None):
     return app.object_response(rmas_d['rs_create_staging'], None, 'text/plain')
 
 
-@TASR_REDSHIFT_APP.get('/<subject_name>/redshift/dml_insert_from_staging')
+@REDSHIFT_APP.get('/<subject_name>/redshift/dml_insert_from_staging')
 def subject_redshift_dml_insert_from_staging(subject_name=None):
     '''Get the DML statement to insert staging data into the main table,
     converting bigints to timestamps as required.
     '''
-    app = TASR_REDSHIFT_APP
+    app = REDSHIFT_APP
     subject = get_subject(subject_name)
     if not is_redshift_enabled(subject):
         app.abort(404, ('RedShift not enabled for %s.' % subject.name))
