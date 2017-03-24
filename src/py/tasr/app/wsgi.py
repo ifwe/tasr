@@ -17,13 +17,13 @@ changes applied to the unbrella object to cascade down automatically.
 This module also includes some general purpose util methods used by many of the
 subapps.
 '''
-import bottle
 import json
 import logging
 import StringIO
 import re
+import bottle
 
-from bottle import BaseRequest, Bottle, FormsDict
+from bottle import BaseRequest, Bottle
 from tasr.app.config import CONFIG
 from tasr.headers import SubjectHeaderBot, SchemaHeaderBot
 from tasr.repository import AvroSchemaRepository
@@ -77,26 +77,26 @@ class TASRApp(Bottle):
         if is_json_type(rctype):
             # if JSON is passed, try and extract the dict that way
             try:
-                dct = req.json
+                return req.json
             except ValueError:
                 self.abort(400, 'Invalid JSON')
         elif isinstance(rctype, basestring):
             ftypes = ['application/x-www-form-urlencoded',
                       'multipart/form-data']
             if rctype.lower() in ftypes:
-                '''
-                You would think we could cast req.forms to a FormsDict and
-                still access the object as a MultiDict.  You would be wrong.
-                '''
-                for key in req.forms.dict.keys():
-                    plist = req.forms.dict[key]
+                # You would think we could cast req.forms to a FormsDict and
+                # still access the object as a MultiDict.  You would be wrong.
+                for key in req.forms.keys():
+                    plist = req.forms.getall(key)
                     if len(plist) > 1:
                         self.abort(400, 'Multiple vals for %s' % key)
                     if len(plist) == 1:
                         dct[key] = plist[0]
         return dct
 
-    def error_dict(self, status_code=500, message='Error'):
+    @staticmethod
+    def error_dict(status_code=500, message='Error'):
+        '''Method to wrap request data into a dict for an error response.'''
         errd = {'application': 'TASR', 'version': TASR_VERSION}
         errd["method"] = bottle.request.method
         errd["uri"] = bottle.request.fullpath
@@ -106,12 +106,14 @@ class TASRApp(Bottle):
         return errd
 
     def default_error_handler(self, err):
+        '''Standardize error responses'''
         bottle.response.status = err.status_code
         errd = self.error_dict(err.status_code,
                                err.message if err.message else err.status_line)
         return self.object_response(None, errd)
 
     def abort(self, code=500, text='Unknown Error.'):
+        '''Standardize abort responses'''
         log_request(code)
         rctype = response_content_type()
         if is_json_type(rctype):
@@ -124,11 +126,12 @@ class TASRApp(Bottle):
             bottle.abort(code, text)
 
     def json_str_response(self, json_str):
+        '''Response passing back a JSON string.'''
         bottle.response.content_type = 'application/json'
 
         callback_fn = get_jsonp_callback()
         if callback_fn and re.match(r'.*\W.*', callback_fn):
-                self.abort(400, 'Invalid JSONP callback function name')
+            self.abort(400, 'Invalid JSONP callback function name')
 
         log_request(bottle.response.status_code)
         if callback_fn:
@@ -138,26 +141,27 @@ class TASRApp(Bottle):
             return json_str
 
     def object_response(self, obj, json_obj=None, default_type='text/plain'):
+        '''Response passing back an object.'''
         rctype = response_content_type(default_type)
         bottle.response.content_type = rctype
         callback_fn = get_jsonp_callback()
         if callback_fn and re.match(r'.*\W.*', callback_fn):
-                self.abort(400, 'Invalid JSONP callback function name')
+            self.abort(400, 'Invalid JSONP callback function name')
 
         log_request(bottle.response.status_code)
         if callback_fn:
             # return a JSONP wrapped response
-            if json_obj == None:
+            if json_obj is None:
                 jbod = json_body(obj)
             else:
                 jbod = json_body(json_obj)
             return ("/**/typeof %s==='function' && %s(%s);" %
                     (callback_fn, callback_fn, jbod))
         elif is_json_type(rctype):
-            if json_obj == None:
+            if json_obj is None:
                 return json_body(obj)
             return json_body(json_obj)
-        elif not obj == None:
+        elif not obj is None:
             # if we're not returning JSON and obj is not None, return as lines
             buff = StringIO.StringIO()
             if hasattr(obj, '__iter__'):
@@ -216,6 +220,7 @@ class TASRApp(Bottle):
 
 
 def log_request(code=200):
+    '''Logging convenience method.'''
     level = logging.INFO
     if code >= 400 and code < 500:
         level = logging.WARN
@@ -232,36 +237,39 @@ def log_request(code=200):
 
 
 def is_pretty():
-    req_query = FormsDict(bottle.request.query)
-    for qk in req_query.keys():
-        if qk.strip().lower() == 'pretty':
+    '''A boolean check for the pretty flag.'''
+    for key in bottle.request.query.keys():
+        if key.strip().lower() == 'pretty':
             return True
     return False
 
 
 def get_jsonp_callback():
-    req_query = FormsDict(bottle.request.query)
-    for qk in req_query.keys():
-        if qk.strip().lower() == 'callback':
+    '''Convenience method for pulling the callback ID if present.'''
+    for key in bottle.request.query.keys():
+        if key.strip().lower() == 'callback':
             # it's a callback query
-            if len(req_query.getall(qk)) > 0:
-                # we have at least one entry 
-                if len(req_query.get(qk)) > 0:
+            plist = bottle.request.query.getall(key)
+            if len(plist) > 0:
+                # we have at least one entry
+                if len(plist[0]) > 0:
                     # the most recent callback value is not empty, so return it
-                    return req_query.get(qk)
+                    return plist[0]
     return None
 
 
-def json_body(ob):
+def json_body(target_object):
+    '''Convenience method to handle pretty response case.'''
     if is_pretty():
-        j = json.dumps(ob, sort_keys=False, indent=3,
+        j = json.dumps(target_object, sort_keys=False, indent=3,
                        separators=(',', ': '))
         return '%s\n' % j
     else:
-        return json.dumps(ob)
+        return json.dumps(target_object)
 
 
 def is_json_type(mime_type):
+    '''Convenience boolean method to check a MIME type name indicating JSON.'''
     if not isinstance(mime_type, basestring):
         return False
     # force to lower, and if we have an encoding, strip it first
@@ -270,6 +278,7 @@ def is_json_type(mime_type):
 
 
 def response_content_type(default_type='text/plain'):
+    '''Determine response type.'''
     jlist = ['application/json', 'text/json']
     acc_list = []
     for a_type in str(bottle.request.get_header('Accept')).split(','):
