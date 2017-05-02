@@ -4,19 +4,24 @@ Created on Nov 15, 2016
 @author: cmills
 '''
 
+import sys
+import os
 import logging
+import argparse
+
 from kafka import KafkaConsumer
 from tasr.utils.serializer import MTLeader, MTDeserializer
 
 class KTail(object):
     '''
-    Support tail-like functionality for Kafka topics containing Avro serialized
-    events with multi-type message leaders.
+    A class encapsulating both a Kafka consumer and a deserializer for Avro
+    serialized events with multi-type headers. This is the guts of the ktail
+    util, supporting tail-like functionality for Kafka topics.
     '''
 
     def __init__(self, topic, kafka_hosts, tasr_host, offset='latest'):
         '''
-        Constructs a KTail object.
+        Constructs an MTTopicFollower object.
 
         topic        The name of the Kafka topic to follow.
         kafka_hosts  A list of '<address>:<port>' host description strings.
@@ -84,3 +89,44 @@ class KTail(object):
                 deser = self.mtd_ver_map[leader.version_number]
         # return the deserialized event dict
         return deser.mt_message_to_dict(mt_message)
+
+
+def main(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('topic', help='The Kafka topic to tail. (required)')
+    parser.add_argument('-v', '--verbose', action='count')
+    parser.add_argument('--tasr', default='tasr.tagged.com:80')
+    parser.add_argument('--kafka', nargs='*', default=['kafkadatahub01:9092'])
+    args = parser.parse_args(argv[1:])
+
+    verbosity = logging.ERROR
+    if args.verbose > 2:
+        verbosity = logging.DEBUG
+    elif args.verbose == 2:
+        verbosity = logging.INFO
+    elif args.verbose == 1:
+        verbosity = logging.WARN
+
+    logging.getLogger().setLevel(verbosity)
+    logging.info('topic: %s, tasr_host: %s, kafka_hosts: %s',
+                 args.topic, args.tasr, args.kafka)
+
+    try:
+        events = KTail(args.topic, kafka_hosts=args.kafka, tasr_host=args.tasr)
+        events.log.setLevel(verbosity)
+        for event_dict in events:
+            sys.stdout.write(str(event_dict) + '\n')
+    except KeyboardInterrupt:
+        sys.stderr.write('Interrupted.\n')
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
+
+if __name__ == "__main__":
+    main(sys.argv)
+
+
+
+
+

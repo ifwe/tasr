@@ -28,13 +28,13 @@ you want for dev.  The common dev settings are included in the 'local' config
 mode.  So, if you have Redis running on localhost:5379 and want TASR running on
 localhost:8080, just fire this off in the project root directory:
 
-    python src/py/app_standalone.py --env local
+    python -mtasr.app.standalone --env local
 
 '''
 import sys
 import argparse
-import socket
 import logging
+import socket
 from tasr.app.config import CONFIG
 from tasr.app import TASR_APP
 
