@@ -564,6 +564,77 @@ class TestTASRCoreApp(TASRTestCase):
         self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
                              'Expected group_names in body to match headers.')
 
+    def test_config_value_for_subjects(self):
+        '''GET /tasr/collection/subjects/config/<key> - gets config values for
+        all subjects with metadata fields set for the target key.'''
+        # reg two vers for target subject and one for an alt subject
+        self.register_subject(self.event_type)
+        alt_subject_name = 'bob'
+        self.register_subject(alt_subject_name)
+        # now get all and check the headers
+        all_url = "%s/collection/subjects/all" % self.url_prefix
+        resp = self.tasr_app.request(all_url, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have a GroupMetadata object for each group in the headers
+        for sub_name in [self.event_type, alt_subject_name]:
+            self.assertIn(sub_name, meta_dict.keys(), 'missing subject')
+            subj = meta_dict[sub_name]
+            self.assertEqual(sub_name, subj.name, 'bad subject name')
+
+        # a GET at this point for a 'bob' config should return no entries
+        sub_config_url = "%s/collection/subjects/config/%s" % (self.url_prefix,
+                                                               'bob')
+        resp = self.tasr_app.request(sub_config_url, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have no GroupMetadata objects
+        for sub_name in [self.event_type, alt_subject_name]:
+            self.assertNotIn(sub_name, meta_dict.keys(), 'unexpected subject')
+
+        # now apply metadata for the base subject and recheck
+        config_url = "%s/subject/%s/config/bob" % (self.url_prefix,
+                                                   self.event_type)
+        resp = self.tasr_app.request(config_url, method='POST',
+                                     content_type='text/plain',
+                                     body='true')
+        self.abort_diff_status(resp, 200)
+
+        # the get_all should be unchanged, the matched should have one
+        resp = self.tasr_app.request(all_url, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have a GroupMetadata object for each group in the headers
+        for sub_name in [self.event_type, alt_subject_name]:
+            self.assertIn(sub_name, meta_dict.keys(), 'missing subject')
+            subj = meta_dict[sub_name]
+            self.assertEqual(sub_name, subj.name, 'bad subject name')
+
+        # now get the subject config values for the 'bob' key (should be one)
+        resp = self.tasr_app.request(sub_config_url, method='GET')
+        self.abort_diff_status(resp, 200)
+        meta_dict = SubjectHeaderBot.extract_metadata(resp)
+        # we should have a GroupMetadata object for one group in the headers
+        self.assertNotIn(alt_subject_name, meta_dict.keys(), 'unexpected obj')
+        # the event_type should be there
+        self.assertIn(self.event_type, meta_dict.keys(), 'missing subject')
+        subj = meta_dict[self.event_type]
+        self.assertEqual(self.event_type, subj.name, 'bad subject name')
+
+        # lastly check the body
+        buff = StringIO.StringIO(resp.body)
+        group_values = {}
+        for topic_line in buff:
+            stl = topic_line.strip()
+            sub, val = stl.split('=')
+            group_values[sub] = val
+        buff.close()
+        group_names = group_values.keys()
+        self.assertListEqual(sorted(group_names), sorted(meta_dict.keys()),
+                             'Expected group_names in body to match headers.')
+
+
+
 if __name__ == "__main__":
     SUITE = unittest.TestLoader().loadTestsFromTestCase(TestTASRCoreApp)
     unittest.TextTestRunner(verbosity=2).run(SUITE)
