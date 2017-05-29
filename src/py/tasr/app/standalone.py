@@ -75,7 +75,8 @@ def main():
         logging.info("Starting TASR_APP...")
         TASR_APP.set_config_mode(ARGS.env)
         TASR_APP.run(host=HOST, port=PORT)
-    except socket.error:
+    except socket.error as err:
+        sys.stderr.write(str(err))
         sys.stderr.write('Could not open %s:%s.\n' % (HOST, PORT))
 
 
