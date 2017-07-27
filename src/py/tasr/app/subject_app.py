@@ -26,12 +26,16 @@ import tasr.registered_schema
 import tasr.app.collection_app
 
 from tasr.app.wsgi import TASRApp, is_json_type
+from tasr.app.slave_block_plugin import SlaveBlockPlugin
 
 
 ##############################################################################
 # TASR Subject API endpoints -- mount to /tasr/subject
 ##############################################################################
 SUBJECT_APP = TASRApp()
+# Add SBP to handle calls attempting to write to a slave redis gracefully.
+sbp = SlaveBlockPlugin()
+SUBJECT_APP.install(sbp)
 
 
 def abort_if_value_bad(val, label='expected value'):
@@ -57,7 +61,7 @@ def abort_if_content_type_not_json():
 
 def abort_if_body_empty():
     '''A common check for PUT and POST endpoints.'''
-    bod = bottle.request.body.getvalue()
+    bod = bottle.request.body.getvalue()  # pylint: disable=no-member
     if bod is None or bod == '':
         SUBJECT_APP.abort(400, 'Expected a non-empty request body.')
 
@@ -137,7 +141,7 @@ def register_subject(subject_name=None):
         subject = SUBJECT_APP.ASR.lookup_group(subject_name)
         if not subject:
             SUBJECT_APP.abort(500, ('Failed to create subject %s.'
-                                         % subject_name))
+                                    % subject_name))
         bottle.response.status = 201
         return SUBJECT_APP.subject_response(subject)
 
@@ -193,7 +197,7 @@ def get_subject_config_entry(subject_name=None, key=None):
     subject = get_subject(subject_name)
     if key not in subject.config:
         SUBJECT_APP.abort(404, ('No %s in config for %s.' %
-                                     (key, subject_name)))
+                                (key, subject_name)))
     return SUBJECT_APP.subject_config_entry_response(subject, key)
 
 
@@ -201,7 +205,7 @@ def get_subject_config_entry(subject_name=None, key=None):
 def update_subject_config_entry(subject_name=None, key=None):
     '''Set or replace the value for the KEY in config dict for a subject.'''
     abort_if_subject_bad(subject_name)
-    val = bottle.request.body.getvalue()
+    val = bottle.request.body.getvalue()  # pylint: disable=no-member
     ckey = 'config.%s' % key
     SUBJECT_APP.ASR.set_group_metadata_entry(subject_name, ckey, val)
     subject = get_subject(subject_name)
@@ -380,7 +384,7 @@ def recursive_master_schema(versions):
 
 
 def is_conflictok():
-    for qk in bottle.request.query.dict.keys():
+    for qk in bottle.request.query.dict.keys():  # pylint: disable=no-member
         if qk.strip().lower() == 'conflictok':
             return True
     return False
@@ -396,8 +400,8 @@ def subject_master_schema(subject_name=None):
     from the most recent compatible versions.  If there is an anchor version
     set, the master will include versions from the anchor forward.'''
     abort_if_subject_bad(subject_name)
-    # first try the cached masters
     asr = SUBJECT_APP.ASR
+    # first try the cached masters
     master_id = get_master_sha256_id(subject_name)
     mas_d = asr.get_master_dict_for_sha256_id(master_id)
     if mas_d and 'schema' in mas_d:
@@ -407,7 +411,7 @@ def subject_master_schema(subject_name=None):
     versions = get_anchored_version_list(subject_name)
     if not versions or len(versions) == 0:
         SUBJECT_APP.abort(404, ('No versions registered for %s.'
-                                     % subject_name))
+                                % subject_name))
     (depth, mas) = recursive_master_schema(versions)
     mas_str = json.dumps(mas.json_obj)
     # we might want to add a response header to indicate master depth
@@ -415,8 +419,8 @@ def subject_master_schema(subject_name=None):
         # master based on an incomplete set of versions
         if not is_conflictok():
             bottle.response.status = 409
-    else:
-        # cache masters based on complete version sets
+    elif not asr.is_slave():
+        # if redis not a slave, cache masters based on complete version sets
         asr.set_master_dict_entry(master_id, 'schema', mas_str)
     return SUBJECT_APP.json_str_response(mas_str)
 
@@ -482,7 +486,7 @@ def register_subject_schema(subject_name=None):
     abort_if_content_type_not_json()
     abort_if_body_empty()
     try:
-        schema_str = bottle.request.body.getvalue()
+        schema_str = bottle.request.body.getvalue()  # pylint: disable=E1101
         asr = SUBJECT_APP.ASR
         reg_schema = asr.register_schema(subject_name, schema_str)
         if not reg_schema or not reg_schema.is_valid:
@@ -507,7 +511,7 @@ def register_compatible_subject_schema(subject_name=None):
     abort_if_subject_bad(subject_name)
     abort_if_content_type_not_json()
     abort_if_body_empty()
-    schema_str = bottle.request.body.getvalue()
+    schema_str = bottle.request.body.getvalue()  # pylint: disable=no-member
     try:
         if not is_back_compatible(subject_name, schema_str):
             _msg = 'Schema not compatible with previous versions.'
@@ -552,7 +556,7 @@ def lookup_by_schema_str(subject_name=None):
     abort_if_content_type_not_json()
     abort_if_body_empty()
     try:
-        schema_str = bottle.request.body.getvalue()
+        schema_str = bottle.request.body.getvalue()  # pylint: disable=E1101
         asr = SUBJECT_APP.ASR
         reg_schema = asr.get_schema_for_schema_str(schema_str)
         if reg_schema and subject_name in reg_schema.group_names:
@@ -597,7 +601,7 @@ def lookup_by_subject_and_version(subject_name=None, version=None):
     reg_schema = asr.get_schema_for_group_and_version(subject_name, version)
     if not reg_schema:
         SUBJECT_APP.abort(404, ('No version %s registered for subject %s.'
-                                     % (version, subject_name)))
+                                % (version, subject_name)))
     '''With multiple schema versions for a group, only the latest is
     included in the retrieved RS.  If we asked for a particular schema
     version, we expect to the RS to list that version number, even if it

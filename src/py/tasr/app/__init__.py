@@ -20,7 +20,7 @@ The TASR_APP object is the "callable object" for mod_wsgi.  The main things
 you need to set are WSGIScriptAlias and WSGICallableObject.  In our standard
 conf file (for Apache httpd with mod_wsgi), these look like this:
 
-    WSGIScriptAlias / /usr/lib/python2.7/site-packages/tasr/app.py
+    WSGIScriptAlias / /usr/lib/python2.7/site-packages/tasr/app/__init__.py
     WSGICallableObject TASR_APP
 
 It is also a good idea to set the WSGIProcessGroup and the WSGIDaemonProcess.
@@ -31,21 +31,24 @@ Our default settings look like this:
 
 For running the app in standalone mode, please see the app_standalone module.
 '''
+import logging
+from bottle import abort, install
+from tasr.repository import SlaveModException
 from tasr.app.wsgi import TASRApp
 from tasr.app.collection_app import COLLECTION_APP
 from tasr.app.id_app import ID_APP
 from tasr.app.schema_app import SCHEMA_APP
 from tasr.app.subject_app import SUBJECT_APP
-from tasr.app.redshift_app import REDSHIFT_APP
+
+# importing redshift_app adds the redshift-specific endpoints/routes -- do this
+# AFTER importing COLLECTION_APP and SUBJECT_APP
+import tasr.app.redshift_app
 
 
 TASR_APP = TASRApp()
+
 # core endpoints are non-colliding, so just mount them
 TASR_APP.mount('/tasr/collection', COLLECTION_APP)
 TASR_APP.mount('/tasr/id', ID_APP)
 TASR_APP.mount('/tasr/schema', SCHEMA_APP)
-
-# the RS endpoints are extensions to the subject endpoints, so merge them in
-# then mount the merged application
-SUBJECT_APP.merge(REDSHIFT_APP)
 TASR_APP.mount('/tasr/subject', SUBJECT_APP)

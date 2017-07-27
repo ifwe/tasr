@@ -69,12 +69,17 @@ specific API endpoints should happen in the app.
 import time
 import redis
 import base64
-import binascii
 import io
 import sys
 import struct
 from tasr.registered_schema import RegisteredSchema
 from tasr.group import Group, InvalidGroupException
+from tasr.registered_schema import RegisteredAvroSchema
+
+
+class SlaveModException(Exception):
+    '''Thrown when bound redis is a slave and cannot modify values.'''
+    pass
 
 
 class RedisSchemaRepository(object):
@@ -146,6 +151,7 @@ class RedisSchemaRepository(object):
     def __init__(self, host='localhost', port=6379, db=0):
         super(RedisSchemaRepository, self).__init__()
         self.redis = redis.StrictRedis(host, port, db)
+        self.redis_role = None
         # register_schema lua scripts in Redis
         self.lua_get_for_md5 = None
         self.lua_get_for_group_and_version = None
@@ -159,6 +165,8 @@ class RedisSchemaRepository(object):
         except redis.exceptions.ConnectionError:
             raise Exception(u'No Redis at %s on port %s and db %s' %
                             (host, port, db))
+
+    # maybe switch self.redis over to use pooling?
 
     ##########################################################################
     # LUA script registrations
@@ -299,6 +307,17 @@ class RedisSchemaRepository(object):
     # exposed, API methods
     ##########################################################################
 
+    def is_slave(self, force=False):
+        if not force and self.redis_role:
+            # use cached value if available unless forced
+            return self.redis_role == 'slave'
+
+        redis_info = self.redis.info()
+        if 'role' in redis_info:
+            self.redis_role = str(redis_info['role']).lower()
+            return self.redis_role == 'slave'
+        raise Exception('Redis role undefined. Info: %s' % redis_info)
+
     def get_all_groups(self):
         '''Return a set of current group objects.'''
         all_groups = []
@@ -357,8 +376,10 @@ class RedisSchemaRepository(object):
     def register_group(self, group_name, metadata_dict=None, validators=None):
         '''Initialize a group, optionally specifying a dict of group metadata
         values and a set of validator class name strings.'''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot register group.')
         group_key = self.get_group_key(group_name)
-        timestamp = long(time.time())
+        timestamp = long(time.time())  # pylint: disable=no-member
         rvals = self.lua_init_group(keys=[group_key, timestamp, ])
         if rvals:
             # this will update the hash fields and validators if provided
@@ -376,16 +397,22 @@ class RedisSchemaRepository(object):
     def set_group_metadata(self, group_name, entry_dict):
         '''Set all the entries in the passed dict in the redis hash.  This will
         NOT clear unmentioned keys.'''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot set group metadata.')
         group_key = self.get_group_key(group_name)
         self.redis.hmset(group_key, entry_dict)
 
     def set_group_metadata_entry(self, group_name, key_name, val):
         '''Sets a specific group metadata entry in the redis hash.'''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot set group metadata.')
         group_key = self.get_group_key(group_name)
         self.redis.hset(group_key, key_name, val)
 
     def delete_group_metadata_entry(self, group_name, key_name):
         '''Deletes a specific group metadata entry in the redis hash.'''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot delete group.')
         group_key = self.get_group_key(group_name)
         field_key = key_name
         self.redis.hdel(group_key, field_key)
@@ -394,12 +421,16 @@ class RedisSchemaRepository(object):
         '''Deletes all group metadata entries in the redis hash having keys
         matching the specified prefix.  This is mainly used to clear all
         "config." prefixed entries.'''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot delete metadata.')
         group_key = self.get_group_key(group_name)
         for field in self.redis.hkeys(group_key):
             if field.startswith(prefix):
                 self.redis.hdel(group_key, field)
 
     def update_master_dict(self, master_sha256_id, mas_dict):
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot update master dict.')
         for field, value in mas_dict.iteritems():
             self.set_master_dict_entry(master_sha256_id, field, value)
 
@@ -408,11 +439,15 @@ class RedisSchemaRepository(object):
         passed SHA256 master id. The master id is a hash of a concatenation of
         version keys.
         '''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot set master dict.')
         master_key = u'm.%s' % master_sha256_id
         self.redis.hset(master_key, field, value)
 
     def register_schema(self, group_name, schema_str):
         '''Register a schema string as a version for a group_name.'''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot register a schema.')
         if not Group.validate_group_name(group_name):
             raise InvalidGroupException('Bad group name: %s' % group_name)
         new_rs = self.instantiate_registered_schema()
@@ -428,7 +463,7 @@ class RedisSchemaRepository(object):
         md5_key = u'id.%s' % new_rs.md5_id
         vid_key = u'vid.%s' % group_name
         vts_key = u'vts.%s' % group_name
-        now = long(time.time())
+        now = long(time.time())  # pylint: disable=no-member
         # we also need to support the old topic.* lists as well for Vadim
         topic_key = u'topic.%s' % group_name
 
@@ -489,6 +524,8 @@ class RedisSchemaRepository(object):
         tools that use TASR.  This method SHOULD NOT be exposed through the
         REST app, but rather through a command-line admin tool.
         '''
+        if self.is_slave():
+            raise SlaveModException('Slave redis cannot delete a group.')
         if not self.redis.hgetall('g.%s' % group_name):
             raise ValueError("%s not registered." % group_name)
 
@@ -661,9 +698,6 @@ class RedisSchemaRepository(object):
             if vid == sha256_key:
                 vlist.append(version)
         return vlist
-
-
-from tasr.registered_schema import RegisteredAvroSchema
 
 
 class AvroSchemaRepository(RedisSchemaRepository):

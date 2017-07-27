@@ -37,11 +37,11 @@ class TASRApp(Bottle):
     '''
     def __init__(self, config=CONFIG):
         super(TASRApp, self).__init__()
+        self.catchall = False
         self.config = config
         self.mounted = dict()
         self.mounted_path = '/'
-        self.ASR = AvroSchemaRepository(host=config.redis_host,
-                                        port=config.redis_port)
+        self.ASR = None  # defer ASR instantiation until we set the mode
 
     def set_config_mode(self, mode):
         '''Sets the mode of the associated TASRConfig.  If the app has any
@@ -112,7 +112,7 @@ class TASRApp(Bottle):
                                err.message if err.message else err.status_line)
         return self.object_response(None, errd)
 
-    def abort(self, code=500, text='Unknown Error.'):
+    def abort(self, code=500, text='Unknown Error.', verbose=False):
         '''Standardize abort responses'''
         log_request(code)
         rctype = response_content_type()
@@ -122,6 +122,11 @@ class TASRApp(Bottle):
             bottle.response.content_type = rctype
             errd = self.error_dict(code, text)
             raise bottle.HTTPResponse(body=json_body(errd), status=code)
+        elif verbose:
+            # if verbose, return the error text as response body
+            bottle.response.status = code
+            bottle.response.content_type = rctype
+            raise bottle.HTTPResponse(body=str(text), status=code)
         else:
             bottle.abort(code, text)
 
@@ -161,7 +166,7 @@ class TASRApp(Bottle):
             if json_obj is None:
                 return json_body(obj)
             return json_body(json_obj)
-        elif not obj is None:
+        elif obj is not None:
             # if we're not returning JSON and obj is not None, return as lines
             buff = StringIO.StringIO()
             if hasattr(obj, '__iter__'):
