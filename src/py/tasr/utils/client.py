@@ -17,7 +17,7 @@ import StringIO
 from tasr.registered_schema import RegisteredAvroSchema
 from tasr.headers import SubjectHeaderBot, SchemaHeaderBot
 
-APP = tasr.app.TASR_APP
+APP = tasr.app.BASE_APP
 APP.set_config_mode('local')
 TASR_HOST = APP.config.host
 TASR_PORT = APP.config.port

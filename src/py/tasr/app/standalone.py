@@ -36,7 +36,7 @@ import argparse
 import logging
 import socket
 from tasr.app.config import CONFIG
-from tasr.app import TASR_APP
+from tasr.app import BASE_APP
 
 ENV = 'standard'
 CONFIG.set_mode(ENV)
@@ -72,10 +72,10 @@ def main():
                      (HOST, PORT, RHOST, RPORT))
     sys.stdout.flush()
     try:
-        logging.info("Starting TASR_APP...")
-        TASR_APP.set_config_mode(ARGS.env)
-        TASR_APP.run(host=HOST, port=PORT)
-    except socket.error as err:
+        logging.info("Starting TASRApp...")
+        BASE_APP.set_config_mode(ARGS.env)
+        BASE_APP.run(host=HOST, port=PORT)
+    except socket.error as err:  # pylint: disable=no-member
         sys.stderr.write(str(err))
         sys.stderr.write('Could not open %s:%s.\n' % (HOST, PORT))
 

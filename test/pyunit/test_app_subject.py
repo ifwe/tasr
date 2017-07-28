@@ -15,7 +15,7 @@ import StringIO
 import requests
 from datetime import datetime, timedelta
 
-APP = tasr.app.TASR_APP
+APP = tasr.app.BASE_APP
 APP.set_config_mode('local')
 
 

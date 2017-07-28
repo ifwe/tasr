@@ -11,7 +11,7 @@ from webtest import TestApp
 import tasr.app
 import json
 
-APP = tasr.app.TASR_APP
+APP = tasr.app.BASE_APP
 APP.set_config_mode('local')
 
 

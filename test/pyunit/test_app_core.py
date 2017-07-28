@@ -14,7 +14,7 @@ import StringIO
 import json
 import tasr.registered_schema
 
-APP = tasr.app.TASR_APP
+APP = tasr.app.BASE_APP
 APP.set_config_mode('local')
 
 

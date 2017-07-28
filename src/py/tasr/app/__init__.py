@@ -44,11 +44,27 @@ from tasr.app.subject_app import SUBJECT_APP
 # AFTER importing COLLECTION_APP and SUBJECT_APP
 import tasr.app.redshift_app
 
-
-TASR_APP = TASRApp()
+BASE_APP = TASRApp()
 
 # core endpoints are non-colliding, so just mount them
-TASR_APP.mount('/tasr/collection', COLLECTION_APP)
-TASR_APP.mount('/tasr/id', ID_APP)
-TASR_APP.mount('/tasr/schema', SCHEMA_APP)
-TASR_APP.mount('/tasr/subject', SUBJECT_APP)
+BASE_APP.mount('/tasr/collection', COLLECTION_APP)
+BASE_APP.mount('/tasr/id', ID_APP)
+BASE_APP.mount('/tasr/schema', SCHEMA_APP)
+BASE_APP.mount('/tasr/subject', SUBJECT_APP)
+
+
+class StandardApp():
+    def __init__(self, tasr_app):
+        logging.getLogger().setLevel(logging.DEBUG)
+        self.tasr_app = tasr_app
+        self.tasr_app.set_config_mode('standard')
+
+    def __iter__(self):
+        logging.info('iter call')
+
+    def __call__(self, environ, start_response):
+        logging.info('straight call')
+        return self.tasr_app.__call__(environ, start_response)
+
+
+TASR_APP = StandardApp(BASE_APP)

@@ -13,7 +13,7 @@ from tasr.headers import SchemaHeaderBot
 from tasr.utils.serializer import MTSerializer, MTDeserializer
 import logging
 
-APP = tasr.app.TASR_APP
+APP = tasr.app.BASE_APP
 APP.set_config_mode('local')
 
 logging.getLogger().setLevel(logging.INFO)
@@ -148,7 +148,7 @@ class TestSerializer(TASRTestCase):
         mts = mtd.get_serializer()
         self.assertEqual(self.event_type, mts.topic, 'topic mismatch')
         self.assertEqual(mts.sha256_id, mtd.sha256_id, 'sha256 mismatch')
-    
+
     def test_serde_roundtrip(self):
         # prelims -- reg schema, instantiate mts
         resp = self.register_schema(self.event_type, self.schema_str)
@@ -160,7 +160,7 @@ class TestSerializer(TASRTestCase):
         gold_event = self.minimal_gold_event_dict()
         serialized_event = mts.serialize_event(gold_event)
         logging.info('encoded event: %s', serialized_event)
-        
+
         mtd = mts.get_deserializer()
         deserialized_event_dict = mtd.deserialize_event(serialized_event)
         # Serialization fills in default field vals, so don't assert equal

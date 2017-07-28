@@ -8,11 +8,11 @@ from tasr_test import TASRTestCase
 
 import unittest
 import time
-from tasr.app import TASR_APP
+from tasr.app import BASE_APP
 from tasr.repository import AvroSchemaRepository
 from tasr.group import InvalidGroupException
 
-APP = TASR_APP
+APP = BASE_APP
 APP.set_config_mode('local')
 HOST_PORT = r'%s:%s' % (APP.config.host, APP.config.port)
 

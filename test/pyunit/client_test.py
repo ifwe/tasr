@@ -5,7 +5,7 @@ Created on May 7, 2014
 '''
 
 from tasr_test import TASRTestCase
-from tasr.app import TASR_APP
+from tasr.app import BASE_APP
 
 import requests
 import logging
@@ -14,7 +14,7 @@ from requests.packages.urllib3.response import HTTPResponse
 import httmock
 from webtest import TestApp, TestRequest
 
-APP = TASR_APP
+APP = BASE_APP
 APP.set_config_mode('local')
 HOST_PORT = r'%s:%s' % (APP.config.host, APP.config.port)
 
