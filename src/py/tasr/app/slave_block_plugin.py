@@ -26,7 +26,7 @@ class SlaveBlockPlugin(object):
 
     def apply(self, callback, route):
         if (isinstance(route.app, TASRApp) and route.app.ASR.is_slave() and
-                route.method in ('PUT', 'POST', 'DELETE')):
+                route.method in ('PUT', 'DELETE')):
             # these methods must be able to modify redis, so they should
             # always fail if the connected redis instance is a slave
             def wrapper(*args, **kwargs):  # pylint: disable=W0613
